@@ -9,3 +9,6 @@ bytes.workspace = true
 fory.workspace = true
 fory-derive.workspace = true
 fory-core.workspace = true
+serde_yaml.workspace = true
+serde.workspace = true
+moka.workspace = true

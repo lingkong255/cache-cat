@@ -1,7 +1,7 @@
-use crate::share::model::{PrintTestReq, PrintTestRes};
+use crate::core::moka::{MyValue, get_cache};
+use crate::share::model::{GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq, SetRes};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use fory::Fory;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -10,11 +10,12 @@ use tokio::net::TcpStream;
 type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
 static HANDLER_TABLE: &[HandlerEntry] = &[
     (1, || Box::new(RpcMethod { func: print_test })),
-    (1, || Box::new(RpcMethod { func: print_test })),
+    (2, || Box::new(RpcMethod { func: set })),
+    (3, || Box::new(RpcMethod { func: get })),
 ];
 
 pub async fn hand(
-    mut socket: TcpStream,
+    mut socket: &mut TcpStream,
     addr: SocketAddr,
     mut package: BytesMut,
     fory: Arc<Fory>,
@@ -23,14 +24,13 @@ pub async fn hand(
     let request_id = u32::from_be_bytes(package[0..4].try_into().unwrap());
     let func_id = u32::from_be_bytes(package[4..8].try_into().unwrap());
     package.advance(8);
-
+    //选择对应的方法并调用
     let handler = HANDLER_TABLE
         .iter()
         .find(|(id, _)| *id == func_id)
         .map(|(_, ctor)| ctor())
         .ok_or(())?;
 
-    // let handler = handlers.get(&func_id).ok_or(())?;
     let response_data = handler.call(&fory, package.freeze());
 
     let mut response_length = response_data.len() as u32;
@@ -72,4 +72,23 @@ where
 fn print_test(d: PrintTestReq) -> PrintTestRes {
     println!("{}", d.message);
     PrintTestRes { message: d.message }
+}
+
+fn set(req: SetReq) -> SetRes {
+    let cache = get_cache();
+    let v = MyValue {
+        data: Arc::new(req.value),
+        ttl_ms: req.ex_time,
+    };
+    cache.insert(req.key, v);
+    SetRes {}
+}
+
+fn get(req: GetReq) -> GetRes {
+    let cache = get_cache();
+    let a = cache.get(&req.key);
+    //为避免空指针，返回Option
+    GetRes {
+        value: a.map(|v| v.data.clone()),
+    }
 }

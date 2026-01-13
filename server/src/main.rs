@@ -1,18 +1,28 @@
 use bytes::{Buf, BytesMut};
 use fory_core::Fory;
+use server::core::config::{get_config, init_config};
+use server::core::moka::init_cache;
 use server::handler::request_handler::hand;
-use server::share::model::{PrintTestReq, PrintTestRes};
+use server::share::model::{GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq, SetRes};
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    init_config("./server/config.yml")?;
+    init_cache();
+    let config = get_config();
+    let addr = format!("127.0.0.1:{}", config.port);
+    let listener = TcpListener::bind(addr).await?;
     println!("Listening on: {}", listener.local_addr()?);
     let mut fory = Fory::default();
     fory.register::<PrintTestReq>(1)?;
     fory.register::<PrintTestRes>(2)?;
+    fory.register::<SetReq>(3)?;
+    fory.register::<SetRes>(4)?;
+    fory.register::<GetReq>(5)?;
+    fory.register::<GetRes>(6)?;
     let fory = Arc::new(fory);
     loop {
         let Ok((mut socket, addr)) = listener.accept().await else {
@@ -43,8 +53,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 //处理完整的数据包
                 let data_packet = buffer.split_to(data_length as usize); //分割出数据体
-                let _ = hand(socket, addr, data_packet, fory).await;
-                break;
+                if let Err(_) = hand(&mut socket, addr, data_packet, Arc::clone(&fory)).await {
+                    eprintln!("处理请求失败 {}", addr);
+                    return;
+                }
             }
         });
     }
