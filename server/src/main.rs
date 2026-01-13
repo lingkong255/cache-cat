@@ -1,9 +1,8 @@
 use bytes::{Buf, BytesMut};
-use fory_core::Fory;
 use server::core::config::{get_config, init_config};
 use server::core::moka::init_cache;
 use server::handler::request_handler::hand;
-use server::share::model::{GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq, SetRes};
+use server::share::model::fory_init;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -16,14 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("127.0.0.1:{}", config.port);
     let listener = TcpListener::bind(addr).await?;
     println!("Listening on: {}", listener.local_addr()?);
-    let mut fory = Fory::default();
-    fory.register::<PrintTestReq>(1)?;
-    fory.register::<PrintTestRes>(2)?;
-    fory.register::<SetReq>(3)?;
-    fory.register::<SetRes>(4)?;
-    fory.register::<GetReq>(5)?;
-    fory.register::<GetRes>(6)?;
-    let fory = Arc::new(fory);
+    let fory = fory_init()?;
     loop {
         let Ok((mut socket, addr)) = listener.accept().await else {
             eprintln!("接受连接失败");

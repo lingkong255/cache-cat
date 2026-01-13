@@ -1,6 +1,9 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use fory_core::Fory;
-use server::share::model::{GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq, SetRes};
+use server::share::model::{
+    DelReq, DelRes, ExistsReq, ExistsRes, GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq,
+    SetRes, fory_init,
+};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -12,7 +15,7 @@ use tokio::net::TcpStream;
 
 struct RpcClient {
     stream: TcpStream,
-    fory: Fory,
+    fory: Arc<Fory>,
     next_request_id: u32,
 }
 
@@ -20,14 +23,7 @@ impl RpcClient {
     async fn connect(addr: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let stream = TcpStream::connect(addr).await?;
 
-        let mut fory = Fory::default();
-        // 注册类型（必须与服务端一致）
-        fory.register::<PrintTestReq>(1)?;
-        fory.register::<PrintTestRes>(2)?;
-        fory.register::<SetReq>(3)?;
-        fory.register::<SetRes>(4)?;
-        fory.register::<GetReq>(5)?;
-        fory.register::<GetRes>(6)?;
+        let fory = fory_init()?;
         Ok(Self {
             stream,
             fory,
@@ -91,48 +87,67 @@ impl RpcClient {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = RpcClient::connect("127.0.0.1:8080").await?;
 
-    let res2: SetRes = client
-        .call(
-            2,
-            SetReq {
-                key: "key".to_string(),
-                value: Vec::from("value".to_string()),
-                ex_time: 1000000,
-            },
-        )
-        .await?;
     // let res2: SetRes = client
     //     .call(
     //         2,
     //         SetReq {
     //             key: "key".to_string(),
     //             value: Vec::from("value".to_string()),
-    //             ex_time: 1,
+    //             ex_time: 1000000,
     //         },
     //     )
     //     .await?;
-    thread::sleep(Duration::from_secs(2));
-
-    let res3: GetRes = client
+    let res2: SetRes = client
         .call(
-            3,
-            GetReq {
+            2,
+            SetReq {
                 key: "key".to_string(),
+                value: Vec::from("val11111ue".to_string()),
+                ex_time: 10000,
             },
         )
         .await?;
-    match res3 {
-        GetRes {
-            value: Some(arc_vec),
-        } => {
-            // 使用 from_utf8_lossy 处理无效的 UTF-8 序列
-            let s = String::from_utf8_lossy(&arc_vec);
-            println!("{}", s);
-        }
-        GetRes { value: None } => {
-            println!("No value");
-        }
-    }
+    // thread::sleep(Duration::from_secs(2));
+    //
+    // let res3: GetRes = client
+    //     .call(
+    //         3,
+    //         GetReq {
+    //             key: "key".to_string(),
+    //         },
+    //     )
+    //     .await?;
+    // match res3 {
+    //     GetRes {
+    //         value: Some(arc_vec),
+    //     } => {
+    //         // 使用 from_utf8_lossy 处理无效的 UTF-8 序列
+    //         let s = String::from_utf8_lossy(&arc_vec);
+    //         println!("{}", s);
+    //     }
+    //     GetRes { value: None } => {
+    //         println!("No value");
+    //     }
+    // }
+    // let res4: DelRes = client
+    //     .call(
+    //         4,
+    //         DelReq {
+    //             key: "key".to_string(),
+    //         },
+    //     )
+    //     .await?;
+    // println!("{}", res4.num);
+
+    // let res5: ExistsRes = client
+    //     .call(
+    //         5,
+    //         ExistsReq {
+    //             key: "key".to_string(),
+    //         },
+    //     )
+    //     .await?;
+    // println!("{}", res5.num);
 
     Ok(())
 }

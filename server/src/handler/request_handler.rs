@@ -1,7 +1,11 @@
 use crate::core::moka::{MyValue, get_cache};
-use crate::share::model::{GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq, SetRes};
+use crate::share::model::{
+    DelReq, DelRes, ExistsReq, ExistsRes, GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq,
+    SetRes,
+};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use fory::Fory;
+use std::mem;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -12,6 +16,8 @@ static HANDLER_TABLE: &[HandlerEntry] = &[
     (1, || Box::new(RpcMethod { func: print_test })),
     (2, || Box::new(RpcMethod { func: set })),
     (3, || Box::new(RpcMethod { func: get })),
+    (4, || Box::new(RpcMethod { func: del })),
+    (5, || Box::new(RpcMethod { func: exists })),
 ];
 
 pub async fn hand(
@@ -90,5 +96,21 @@ fn get(req: GetReq) -> GetRes {
     //为避免空指针，返回Option
     GetRes {
         value: a.map(|v| v.data.clone()),
+    }
+}
+
+fn del(req: DelReq) -> DelRes {
+    let cache = get_cache();
+    match cache.remove(&req.key) {
+        None => DelRes { num: 0 },
+        Some(_) => DelRes { num: 1 },
+    }
+}
+fn exists(req: ExistsReq) -> ExistsRes {
+    let cache = get_cache();
+    if cache.contains_key(&req.key) {
+        ExistsRes { num: 1 }
+    } else {
+        ExistsRes { num: 0 }
     }
 }

@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::sync::OnceLock;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ServerConfig {
@@ -21,7 +21,8 @@ pub static CONFIG: OnceLock<ServerConfig> = OnceLock::new();
 // 初始化函数
 pub fn init_config(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let config = ServerConfig::from_file(path)?;
-    CONFIG.set(config)
+    CONFIG
+        .set(config)
         .map_err(|_| "Config already initialized".into())
 }
 
@@ -34,4 +35,3 @@ pub fn get_config() -> &'static ServerConfig {
 pub fn get_port() -> u16 {
     get_config().port
 }
-

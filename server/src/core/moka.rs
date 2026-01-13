@@ -11,6 +11,15 @@ pub struct MyValue {
 
 /// 自定义 Expiry，实现按插入项返回不同过期时间
 struct MyExpiry;
+const MY_VALUE_SIZE: usize = size_of::<MyValue>();
+// Arc 内部的引用计数（strong + weak）arc的引用计数是在堆上的，所以要加上
+const ARC_COUNTER_SIZE: usize = 2 * size_of::<usize>();
+const VEC_SIZE: usize = size_of::<Vec<u8>>();
+impl MyValue {
+    pub fn estimated_memory_usage(&self) -> usize {
+        MY_VALUE_SIZE + ARC_COUNTER_SIZE + VEC_SIZE + self.data.capacity()
+    }
+}
 
 impl Expiry<String, MyValue> for MyExpiry {
     fn expire_after_create(
