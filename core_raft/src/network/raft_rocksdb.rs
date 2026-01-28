@@ -27,9 +27,9 @@ where
     P: AsRef<Path>,
 {
     let config = Arc::new(Config {
-        heartbeat_interval: 250,
-        election_timeout_min: 299,
-        election_timeout_max: 599, // 添加最大选举超时时间
+        heartbeat_interval: 2500,
+        election_timeout_min: 2990,
+        election_timeout_max: 5990, // 添加最大选举超时时间
         ..Default::default()
     });
 

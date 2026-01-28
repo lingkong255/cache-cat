@@ -108,7 +108,7 @@ async fn append_entries(
         .await
         .expect("Raft append_entries failed");
     let elapsed = start.elapsed();
-    tracing::info!("append 内部: {:?} 节点：{:?}", elapsed, app.id);
+    tracing::info!("append 从节点内部处理: {:?} 节点：{:?}", elapsed, app.id);
 
     res
 }

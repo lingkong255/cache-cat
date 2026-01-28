@@ -59,8 +59,19 @@ impl RaftNetworkV2<TypeConfig> for TcpNetwork {
         _option: RPCOption,
     ) -> Result<AppendEntriesResponse<TypeConfig>, RPCError<TypeConfig>> {
         let start = Instant::now();
+        let is_heartbeat = rpc.entries.is_empty();
         let res: AppendEntriesResponse<TypeConfig> = self.client.call(7, rpc).await.unwrap();
-        tracing::info!("append_entries 整体使用时间: {} 微秒", start.elapsed().as_micros());
+        if is_heartbeat {
+            tracing::info!(
+                "append_entries 心跳 往返耗时: {} us",
+                start.elapsed().as_micros()
+            );
+        } else {
+            tracing::info!(
+                "append_entries 条目 往返耗时: {} us",
+                start.elapsed().as_micros()
+            );
+        }
         Ok(res)
     }
 
