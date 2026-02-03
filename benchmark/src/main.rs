@@ -109,7 +109,7 @@ async fn run_engine(client_num: usize, total_tasks: usize, endpoints: String, op
         };
 
         let handle = tokio::spawn(async move {
-            if let Ok(mut client) = RpcMultiClient::connect(&eps, 2).await {
+            if let Ok(mut client) = RpcMultiClient::connect(&eps, 1).await {
                 // 预分配本地向量，避免全局锁竞争
                 let mut local_latencies = Vec::with_capacity(tasks_per_client);
 
