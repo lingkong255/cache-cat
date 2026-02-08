@@ -1,4 +1,4 @@
-use crate::network::raft_rocksdb::{NodeId, TypeConfig};
+use crate::network::raft_rocksdb::{GroupId, NodeId, TypeConfig};
 use crate::network::router::Router;
 use crate::server::client::client::RpcMultiClient;
 use crate::server::handler::model::{InstallFullSnapshotReq, PrintTestReq, PrintTestRes};
@@ -119,11 +119,11 @@ impl RaftNetworkV2<TypeConfig> for TcpNetwork {
     }
 }
 
-// pub type MultiNetworkFactory = GroupNetworkFactory<Router, u16>;
-// impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
-//     type Network = GroupNetworkAdapter<TypeConfig, u16, Router>;
-//
-//     fn new_client(&mut self, target: NodeId, node: &openraft::BasicNode) -> Self::Network {
-//         // GroupNetworkAdapter::new(self.factory.clone(), target, self.group_id.clone())
-//     }
-// }
+pub type MultiNetworkFactory = GroupNetworkFactory<Router, GroupId>;
+impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
+    type Network = GroupNetworkAdapter<TypeConfig, GroupId, Router>;
+
+    async fn new_client(&mut self, target: NodeId, node: &openraft::BasicNode) -> Self::Network {
+        GroupNetworkAdapter::new(self.factory.clone(), target, self.group_id.clone())
+    }
+}

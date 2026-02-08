@@ -37,7 +37,7 @@ impl Node {
     pub fn add_group(
         &mut self,
         addr: &String,
-        group_id: u16,
+        group_id: GroupId,
         raft: Raft,
         state_machine: StateMachineStore,
     ) {
