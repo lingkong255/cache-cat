@@ -1,15 +1,18 @@
 use crate::network::model::{Request, Response};
 use crate::network::network::NetworkFactory;
 use crate::network::router::{MultiNetworkFactory, Router};
+use crate::store::rocks_log_store::RocksLogStore;
 use crate::store::rocks_store::{StateMachineData, new_storage};
 use openraft::Config;
 use openraft_multi::GroupNetworkFactory;
+use rocksdb::{DB, DBWithThreadMode};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::Mutex;
+
 openraft::declare_raft_types!(
     /// Declare the type configuration for example K/V store.
     pub TypeConfig:
@@ -27,7 +30,7 @@ pub type LogStore = crate::store::rocks_log_store::RocksLogStore;
 pub type StateMachineStore = crate::store::rocks_store::StateMachineStore;
 pub type Raft = openraft::Raft<TypeConfig>;
 
-const GROUP_NUM: i16 = 2;
+pub const GROUP_NUM: i16 = 1;
 pub struct CacheCatApp {
     pub id: NodeId,
     pub addr: String,
@@ -81,10 +84,9 @@ where
     P: AsRef<Path>,
 {
     let mut node = Node::new(node_id, addr.to_string());
+    let db: Arc<DB> = new_storage(dir).await;
     for i in 0..GROUP_NUM {
         let group_id = i as GroupId;
-        let group_dir: PathBuf = Path::new(dir.as_ref()).join(i.to_string());
-        fs::create_dir_all(&group_dir).await.unwrap();
         let config = Arc::new(Config {
             heartbeat_interval: 2500,
             election_timeout_min: 2990,
@@ -93,17 +95,18 @@ where
         });
         let router = Router::new(addr.to_string());
         let network = MultiNetworkFactory::new(router.clone(), group_id);
-        let (log_store, state_machine_store) = new_storage(&group_dir).await;
+        let log_store = RocksLogStore::new(db.clone(), group_id);
+        let sm_store = StateMachineStore::new(db.clone(), group_id).await.unwrap();
         let raft = openraft::Raft::new(
             node_id,
             config.clone(),
             network,
             log_store,
-            state_machine_store.clone(),
+            sm_store.clone(),
         )
         .await
         .unwrap();
-        node.add_group(addr, group_id, raft, state_machine_store)
+        node.add_group(addr, group_id, raft, sm_store)
     }
     node
 }

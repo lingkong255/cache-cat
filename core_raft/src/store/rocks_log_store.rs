@@ -1,3 +1,4 @@
+use crate::network::node::{GroupId, TypeConfig};
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
@@ -27,7 +28,6 @@ use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{Mutex, MutexGuard, RwLock};
-use crate::network::node::TypeConfig;
 
 const MEM_LOG_SIZE: usize = 2000;
 #[derive(Debug, Clone)]
@@ -38,16 +38,14 @@ pub struct RocksLogStore {
 }
 
 impl RocksLogStore {
-    pub fn new(db: Arc<DB>) -> Self {
+    pub fn new(db: Arc<DB>, group_id: GroupId) -> Self {
+        // 明确指定类型
+        let cache: LruCache<u64, EntryOf<TypeConfig>> =
+            LruCache::new(NonZeroUsize::new(MEM_LOG_SIZE).expect("MEM_LOG_SIZE must be > 0"));
         db.cf_handle("meta")
             .expect("column family `meta` not found");
         db.cf_handle("logs")
             .expect("column family `logs` not found");
-
-        // 明确指定类型
-        let cache: LruCache<u64, EntryOf<TypeConfig>> =
-            LruCache::new(NonZeroUsize::new(MEM_LOG_SIZE).expect("MEM_LOG_SIZE must be > 0"));
-
         Self {
             db,
             cache: Arc::new(Mutex::new(cache)),

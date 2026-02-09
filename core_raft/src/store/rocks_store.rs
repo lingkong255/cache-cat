@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::network::model::{Request, Response};
+use crate::network::node::{GROUP_NUM, GroupId, TypeConfig};
 use crate::server::handler::model::SetRes;
 use crate::store::rocks_log_store::RocksLogStore;
 use futures::Stream;
@@ -14,14 +15,13 @@ use openraft::storage::RaftStateMachine;
 use openraft::{EntryPayload, LogId, SnapshotMeta};
 use openraft::{OptionalSend, Snapshot, StoredMembership};
 use openraft::{RaftSnapshotBuilder, RaftTypeConfig};
-use rocksdb::ColumnFamily;
 use rocksdb::ColumnFamilyDescriptor;
 use rocksdb::DB;
 use rocksdb::Options;
+use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::Mutex;
-use crate::network::node::TypeConfig;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StoredSnapshot {
@@ -97,7 +97,7 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachineStore {
 }
 
 impl StateMachineStore {
-    async fn new(db: Arc<DB>) -> Result<StateMachineStore, io::Error> {
+    pub async fn new(db: Arc<DB>, group_id: GroupId) -> Result<StateMachineStore, io::Error> {
         let mut sm = Self {
             data: StateMachineData {
                 last_applied_log_id: None,
@@ -245,30 +245,29 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
     }
 }
 
-pub(crate) async fn new_storage<P: AsRef<Path>>(db_path: P) -> (RocksLogStore, StateMachineStore) {
+pub(crate) async fn new_storage<P: AsRef<Path>>(db_path: P) -> Arc<DB> {
     let mut db_opts = Options::default();
     db_opts.create_missing_column_families(true);
     db_opts.create_if_missing(true);
     //设置常见的优化
 
     db_opts
-        .set_max_background_jobs((std::thread::available_parallelism().unwrap().get() / 2) as i32); //def 2
+        .set_max_background_jobs((std::thread::available_parallelism().unwrap().get() / 1) as i32); //def 2
     db_opts.set_enable_pipelined_write(true); // 启用流水线写入，并发大时写入性能更高
     //l0
     db_opts.set_level_zero_file_num_compaction_trigger(8); //默认是4
     db_opts.set_level_zero_slowdown_writes_trigger(40); //默认20
     db_opts.set_level_zero_stop_writes_trigger(48); //def 24
     db_opts.set_target_file_size_base(128 * 1024 * 1024); //默认为64M
-
+    //
     let store = ColumnFamilyDescriptor::new("store", db_opts.clone());
     let meta = ColumnFamilyDescriptor::new("meta", db_opts.clone());
     let logs = ColumnFamilyDescriptor::new("logs", db_opts.clone());
+    
     //打开多个数据库并创建列族
-    let db = DB::open_cf_descriptors(&db_opts, db_path, vec![store, meta, logs]).unwrap();
+    let db: DBWithThreadMode<SingleThreaded> =
+        DB::open_cf_descriptors(&db_opts, db_path, vec![store,meta,logs]).unwrap();
+
     let db = Arc::new(db);
-
-    let log_store = RocksLogStore::new(db.clone());
-    let sm_store = StateMachineStore::new(db).await.unwrap();
-
-    (log_store, sm_store)
+    db
 }

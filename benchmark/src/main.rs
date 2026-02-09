@@ -1,6 +1,6 @@
 use clap::Parser;
 use core_raft::network::model::Request;
-use core_raft::network::raft_rocksdb::TypeConfig;
+use core_raft::network::node::TypeConfig;
 use core_raft::server::client::client::RpcMultiClient;
 use core_raft::server::handler::model::{PrintTestReq, PrintTestRes, SetReq};
 use openraft::raft::ClientWriteResponse;
@@ -109,10 +109,9 @@ async fn run_engine(client_num: usize, total_tasks: usize, endpoints: String, op
         };
 
         let handle = tokio::spawn(async move {
-            if let Ok(mut client) = RpcMultiClient::connect(&eps).await {
+            if let Ok(mut client) = RpcMultiClient::connect_with_num(&eps, 1).await {
                 // 预分配本地向量，避免全局锁竞争
                 let mut local_latencies = Vec::with_capacity(tasks_per_client);
-
                 for i in 0..tasks_per_client {
                     let start = Instant::now();
                     let success;
@@ -122,7 +121,7 @@ async fn run_engine(client_num: usize, total_tasks: usize, endpoints: String, op
                             .call(
                                 2,
                                 Request::Set(SetReq {
-                                    key: "xxx".into(),
+                                    key: (&i.to_string()).into(),
                                     value: Vec::from("xxx"),
                                     ex_time: 0,
                                 }),

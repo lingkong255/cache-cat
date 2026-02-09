@@ -1,14 +1,16 @@
 use crate::network::model::{Request, Response};
 use crate::network::network::NetworkFactory;
-use crate::network::node::{App, CacheCatApp, NodeId, create_node};
+use crate::network::node::{App, CacheCatApp, NodeId, StateMachineStore, create_node};
 use crate::server::handler::rpc;
 use crate::store::rocks_store::new_storage;
 use openraft::{BasicNode, Config};
 use std::collections::BTreeMap;
 
 use crate::network::router::Router;
+use crate::store::rocks_log_store::RocksLogStore;
 use std::path::Path;
 use std::sync::Arc;
+use rocksdb::ColumnFamilyDescriptor;
 
 pub async fn start_raft_app<P>(node_id: NodeId, dir: P, addr: String) -> std::io::Result<()>
 where
@@ -21,7 +23,10 @@ where
         ..Default::default()
     });
 
-    let (log_store, state_machine_store) = new_storage(&dir).await;
+    let db = new_storage(&dir).await;
+
+    let log_store = RocksLogStore::new(db.clone(), 0);
+    let sm_store = StateMachineStore::new(db.clone(), 0).await.unwrap();
     let network = NetworkFactory {};
 
     let raft = openraft::Raft::new(
@@ -29,7 +34,7 @@ where
         config.clone(),
         network,
         log_store,
-        state_machine_store.clone(),
+        sm_store.clone(),
     )
     .await
     .unwrap();
@@ -39,7 +44,7 @@ where
         addr: addr.clone(),
         raft,
         group_id: 0,
-        state_machine: state_machine_store,
+        state_machine: sm_store,
     };
 
     // 正确构建集群成员映射
@@ -75,5 +80,30 @@ where
 {
     let node = create_node(&addr, node_id, dir).await;
     let apps: Vec<Box<CacheCatApp>> = node.groups.into_values().map(Box::new).collect();
+    let mut nodes = BTreeMap::new();
+    if node_id == 3 {
+        nodes.insert(
+            1,
+            BasicNode {
+                addr: "127.0.0.1:3001".to_string(),
+            },
+        );
+        nodes.insert(
+            2,
+            BasicNode {
+                addr: "127.0.0.1:3002".to_string(),
+            },
+        );
+        nodes.insert(
+            3,
+            BasicNode {
+                addr: "127.0.0.1:3003".to_string(),
+            },
+        );
+        for app in &apps {
+            app.raft.initialize(nodes.clone()).await.unwrap();
+        }
+    }
+
     rpc::start_server(App::new(apps), addr).await
 }
