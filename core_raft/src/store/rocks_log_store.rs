@@ -1,4 +1,5 @@
 use crate::network::node::{GroupId, TypeConfig};
+use crate::store::raft_engine::{MessageExtTyped, create_raft_engine};
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
@@ -16,25 +17,38 @@ use openraft::storage::IOFlushed;
 use openraft::storage::RaftLogStorage;
 use openraft::type_config::TypeConfigExt;
 use openraft::{Entry, LogState};
+use raft_engine::{Engine, LogBatch};
+use rand::Rng;
+use rand::distributions::Alphanumeric;
 use rocksdb::ColumnFamily;
 use rocksdb::DB;
 use rocksdb::Direction;
 use std::error::Error;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::io;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
-use std::ops::RangeBounds;
+use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{Mutex, MutexGuard, RwLock};
 
 const MEM_LOG_SIZE: usize = 2000;
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RocksLogStore {
     db: Arc<DB>,
     cache: Arc<Mutex<LruCache<u64, EntryOf<TypeConfig>>>>,
     _p: PhantomData<TypeConfig>,
+    engine: Arc<Engine>,
+    group_id: GroupId,
+}
+impl Debug for RocksLogStore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RocksLogStore")
+            .field("db", &self.db)
+            .field("cache", &self.cache)
+            .finish()
+    }
 }
 
 impl RocksLogStore {
@@ -46,10 +60,20 @@ impl RocksLogStore {
             .expect("column family `meta` not found");
         db.cf_handle("logs")
             .expect("column family `logs` not found");
+
+        let random_string: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(6)
+            .map(char::from)
+            .collect();
+        let path = format!("E:/tmp/raft/raft-engine/+ {}", random_string);
+        let engine = create_raft_engine(path);
         Self {
             db,
             cache: Arc::new(Mutex::new(cache)),
             _p: Default::default(),
+            engine: Arc::new(engine),
+            group_id,
         }
     }
 
@@ -149,39 +173,59 @@ impl RaftLogReader<TypeConfig> for RocksLogStore {
         &mut self,
         range: RB,
     ) -> Result<Vec<<TypeConfig as RaftTypeConfig>::Entry>, io::Error> {
-        if let Some(cached) = self.try_get_from_cache(range.clone()).await {
-            tracing::info!(
-                "cache hit for range start={:?},end ={:?}",
-                range.start_bound(),
-                range.end_bound()
-            );
-            return Ok(cached);
-        }
-        tracing::warn!(
-            "start={:?},end ={:?}",
-            range.start_bound(),
-            range.end_bound()
-        );
-        let start = match range.start_bound() {
-            std::ops::Bound::Included(x) => id_to_bin(*x),
-            std::ops::Bound::Excluded(x) => id_to_bin(*x + 1),
-            std::ops::Bound::Unbounded => id_to_bin(0),
+        // if let Some(cached) = self.try_get_from_cache(range.clone()).await {
+        //     tracing::info!(
+        //         "cache hit for range start={:?},end ={:?}",
+        //         range.start_bound(),
+        //         range.end_bound()
+        //     );
+        //     return Ok(cached);
+        // }
+        // tracing::warn!(
+        //     "start={:?},end ={:?}",
+        //     range.start_bound(),
+        //     range.end_bound()
+        // );
+
+        let mut start = match range.start_bound() {
+            Bound::Included(&n) => n,
+            Bound::Excluded(&n) => n + 1, // 排除转换为包含
+            Bound::Unbounded => 0,        // 从0开始
         };
+
+        let mut end = match range.end_bound() {
+            Bound::Included(&n) => n + 1, // 包含转换为不包含
+            Bound::Excluded(&n) => n,
+            Bound::Unbounded => u64::MAX, // 到最大值
+        };
+
         let mut res = Vec::new();
-        let it = self.db.iterator_cf(
-            self.cf_logs(),
-            rocksdb::IteratorMode::From(&start, Direction::Forward),
-        );
-        for item_res in it {
-            let (id, val) = item_res.map_err(read_logs_err)?;
-            let id = bin_to_id(&id);
-            if !range.contains(&id) {
-                break;
+        // let it = self.db.iterator_cf(
+        //     self.cf_logs(),
+        //     rocksdb::IteratorMode::From(&start, Direction::Forward),
+        // );
+        // for item_res in it {
+        //     let (id, val) = item_res.map_err(read_logs_err)?;
+        //     let id = bin_to_id(&id);
+        //     if !range.contains(&id) {
+        //         break;
+        //     }
+        //     let entry: EntryOf<TypeConfig> = bincode2::deserialize(&val).map_err(read_logs_err)?;
+        //     assert_eq!(id, entry.index());
+        //     res.push(entry);
+        // }
+        match self.engine.last_index(self.group_id as u64) {
+            None => {
+                return Ok(res);
             }
-            let entry: EntryOf<TypeConfig> = bincode2::deserialize(&val).map_err(read_logs_err)?;
-            assert_eq!(id, entry.index());
-            res.push(entry);
+            Some(x) => {
+                end = (x + 1).min(end);
+                start = (x + 1).min(start);
+            }
         }
+        self.engine
+            .fetch_entries_to::<MessageExtTyped>(self.group_id as u64, start, end, None, &mut res)
+            .unwrap();
         Ok(res)
     }
 
@@ -193,24 +237,37 @@ impl RaftLogReader<TypeConfig> for RocksLogStore {
 impl RaftLogStorage<TypeConfig> for RocksLogStore {
     type LogReader = Self;
 
+    //不会在每次提交条目时被调用，但重启等场景会调用
     async fn get_log_state(&mut self) -> Result<LogState<TypeConfig>, io::Error> {
-        let last = self
-            .db
-            .iterator_cf(self.cf_logs(), rocksdb::IteratorMode::End)
-            .next();
-
-        let last_log_id = match last {
-            None => None,
-            Some(res) => {
-                let (_log_index, entry_bytes) = res.map_err(read_logs_err)?;
-                let ent = bincode2::deserialize::<EntryOf<TypeConfig>>(&entry_bytes)
-                    .map_err(read_logs_err)?;
-                Some(ent.log_id())
+        // let last = self
+        //     .db
+        //     .iterator_cf(self.cf_logs(), rocksdb::IteratorMode::End)
+        //     .next();
+        //
+        // let last_log_id = match last {
+        //     None => None,
+        //     Some(res) => {
+        //         let (_log_index, entry_bytes) = res.map_err(read_logs_err)?;
+        //         let ent: Entry<TypeConfig> = bincode2::deserialize::<EntryOf<TypeConfig>>(&entry_bytes)
+        //             .map_err(read_logs_err)?;
+        //         Some(ent.log_id())
+        //     }
+        // };
+        let last_log_id = match self.engine.last_index(self.group_id as u64) {
+            None => None, //  只要 last_index 为 None，直接返回 None
+            Some(i) => {
+                match self
+                    .engine
+                    .get_entry::<MessageExtTyped>(self.group_id as u64, i)
+                    .unwrap()
+                {
+                    None => None, //  get_entry 为 None 也返回 None
+                    Some(entry) => Some(entry.log_id()),
+                }
             }
         };
 
         let last_purged_log_id = self.get_meta::<meta::LastPurged>()?;
-
         let last_log_id = match last_log_id {
             None => last_purged_log_id.clone(),
             Some(x) => Some(x),
@@ -248,28 +305,37 @@ impl RaftLogStorage<TypeConfig> for RocksLogStore {
         I: IntoIterator<Item = EntryOf<TypeConfig>> + Send,
     {
         let start = Instant::now();
-        let mut cache = self.cache.lock().await;
-        for entry in entries {
-            let id = id_to_bin(entry.index());
-            self.db
-                .put_cf(
-                    self.cf_logs(),
-                    id,
-                    bincode2::serialize(&entry)
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-                )
-                .map_err(|e| io::Error::other(e.to_string()))?;
-            cache.put(entry.index(), entry);
-        }
+        let mut batch = LogBatch::with_capacity(256);
+        let x: Vec<Entry<TypeConfig>> = entries.into_iter().collect();
+        batch
+            .add_entries::<MessageExtTyped>(self.group_id as u64, &x)
+            .unwrap();
+
+        // for entry in entries {
+        //     let id = id_to_bin(entry.index());
+        //     self.db
+        //         .put_cf(
+        //             self.cf_logs(),
+        //             id,
+        //             bincode2::serialize(&entry)
+        //                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+        //         )
+        //         .map_err(|e| io::Error::other(e.to_string()))?;
+        // }
         //提前释放
-        drop(cache);
         // 在调用回调函数之前，确保日志已经持久化到磁盘。
         //
         // 但上面的 `pub_cf()` 必须在这个函数中调用，而不能放到另一个任务里。
         // 因为当函数返回时，需要能够读取到这些日志条目。
-        let db = self.db.clone();
+        // let db = self.db.clone();
+        let res = self.engine
+            .write(&mut batch, false)
+            .map(|_| ())
+            .map_err(io::Error::other);
+        let engine = self.engine.clone();
         std::thread::spawn(move || {
-            let res = db.flush_wal(true).map_err(io::Error::other);
+            let res = engine.sync().map(|_| ())
+                .map_err(io::Error::other);
             callback.io_completed(res);
             let elapsed = start.elapsed();
             tracing::info!("rocksdb append elapsed: {:?}", elapsed);
@@ -283,18 +349,19 @@ impl RaftLogStorage<TypeConfig> for RocksLogStore {
         &mut self,
         last_log_id: Option<LogIdOf<TypeConfig>>,
     ) -> Result<(), io::Error> {
-        tracing::info!("truncate_after: ({:?}, +oo)", last_log_id);
+        // tracing::info!("truncate_after: ({:?}, +oo)", last_log_id);
+        //
+        // let start_index = match last_log_id {
+        //     Some(log_id) => log_id.index() + 1,
+        //     None => 0,
+        // };
+        //
+        // let from = id_to_bin(start_index);
+        // let to = id_to_bin(u64::MAX);
+        // self.db
+        //     .delete_range_cf(self.cf_logs(), &from, &to)
+        //     .map_err(|e| io::Error::other(e.to_string()))?;
 
-        let start_index = match last_log_id {
-            Some(log_id) => log_id.index() + 1,
-            None => 0,
-        };
-
-        let from = id_to_bin(start_index);
-        let to = id_to_bin(u64::MAX);
-        self.db
-            .delete_range_cf(self.cf_logs(), &from, &to)
-            .map_err(|e| io::Error::other(e.to_string()))?;
         // Truncating does not need to be persisted.
         Ok(())
     }
@@ -303,17 +370,20 @@ impl RaftLogStorage<TypeConfig> for RocksLogStore {
     async fn purge(&mut self, log_id: LogIdOf<TypeConfig>) -> Result<(), io::Error> {
         tracing::info!("delete_log: [0, {:?}]", log_id);
 
-        // Write the last-purged log id before purging the logs.
-        // The logs at and before last-purged log id will be ignored by openraft.
-        // Therefore, there is no need to do it in a transaction.
+        // 在清理日志前记录最后清理的日志ID。
+        // openraft 将忽略最后清理日志ID及之前的所有日志。
+        // 因此，无需在事务中执行此操作
         self.put_meta::<meta::LastPurged>(&log_id)?;
 
-        let from = id_to_bin(0);
-        let to = id_to_bin(log_id.index() + 1);
-        //删除指定范围内的所有数据
-        self.db
-            .delete_range_cf(self.cf_logs(), &from, &to)
-            .map_err(|e| io::Error::other(e.to_string()))?;
+        // let from = id_to_bin(0);
+        // let to = id_to_bin(log_id.index() + 1);
+        // //删除指定范围内的所有数据
+        // self.db
+        //     .delete_range_cf(self.cf_logs(), &from, &to)
+        //     .map_err(|e| io::Error::other(e.to_string()))?;
+
+        self.engine
+            .compact_to(self.group_id as u64, log_id.index + 1);
 
         // Purging does not need to be persistent.
         Ok(())

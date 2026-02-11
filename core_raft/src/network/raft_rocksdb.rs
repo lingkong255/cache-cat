@@ -8,9 +8,9 @@ use std::collections::BTreeMap;
 
 use crate::network::router::Router;
 use crate::store::rocks_log_store::RocksLogStore;
+use rocksdb::ColumnFamilyDescriptor;
 use std::path::Path;
 use std::sync::Arc;
-use rocksdb::ColumnFamilyDescriptor;
 
 pub async fn start_raft_app<P>(node_id: NodeId, dir: P, addr: String) -> std::io::Result<()>
 where

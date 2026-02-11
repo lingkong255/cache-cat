@@ -44,14 +44,14 @@ async fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
             String::from("127.0.0.1:3001"),
         ));
     });
-    // let _h2 = thread::spawn(move || {
-    //     let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
-    //     let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
-    //         2,
-    //         d2.path(),
-    //         String::from("127.0.0.1:3002"),
-    //     ));
-    // });
+    let _h2 = thread::spawn(move || {
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
+        let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
+            2,
+            d2.path(),
+            String::from("127.0.0.1:3002"),
+        ));
+    });
     let _h3 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
         let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
@@ -101,6 +101,7 @@ async fn raft() -> Result<(), Box<dyn std::error::Error>> {
             String::from("127.0.0.1:3002"),
         ));
     });
+
     let _h3 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
         let x = rt.block_on(network::raft_rocksdb::start_raft_app(

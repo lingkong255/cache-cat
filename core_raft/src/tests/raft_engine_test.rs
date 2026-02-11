@@ -1,6 +1,8 @@
 // Copyright (c) 2017-present, PingCAP, Inc. Licensed under Apache-2.0.
 
 use raft_engine::{Config, Engine, LogBatch, MessageExt, ReadableSize};
+use raft_engine::env::DefaultFileSystem;
+use raft_engine::internals::FilePipeLog;
 use rand::thread_rng;
 use rand_distr::{Distribution, Normal};
 use serde::{Deserialize, Serialize};
@@ -50,7 +52,7 @@ fn main() {
         batch_compression_threshold: ReadableSize::kb(0),
         ..Default::default()
     };
-    let engine = Engine::open(config).expect("Open raft engine");
+    let engine:Engine<DefaultFileSystem, FilePipeLog<DefaultFileSystem>> = Engine::open(config).expect("Open raft engine");
 
     let compact_offset = 32; // In src/purge.rs, it's the limit for rewrite.
 

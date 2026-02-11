@@ -95,7 +95,8 @@ where
         });
         let router = Router::new(addr.to_string());
         let network = MultiNetworkFactory::new(router.clone(), group_id);
-        let log_store = RocksLogStore::new(db.clone(), group_id);
+        let log_store =
+            RocksLogStore::new(db.clone(), group_id);
         let sm_store = StateMachineStore::new(db.clone(), group_id).await.unwrap();
         let raft = openraft::Raft::new(
             node_id,
