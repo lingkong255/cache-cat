@@ -6,11 +6,11 @@ use crate::store::rocks_store::new_storage;
 use openraft::{BasicNode, Config};
 use std::collections::BTreeMap;
 
-use crate::network::router::Router;
 use crate::store::rocks_log_store::RocksLogStore;
-use rocksdb::ColumnFamilyDescriptor;
 use std::path::Path;
 use std::sync::Arc;
+use rocksdb::DB;
+use crate::store::raft_engine::create_raft_engine;
 
 pub async fn start_raft_app<P>(node_id: NodeId, dir: P, addr: String) -> std::io::Result<()>
 where
@@ -22,10 +22,11 @@ where
         election_timeout_max: 5990, // 添加最大选举超时时间
         ..Default::default()
     });
-
-    let db = new_storage(&dir).await;
-
-    let log_store = RocksLogStore::new(db.clone(), 0);
+    let raft_engine = dir.as_ref().join("raft-engine");
+    let rocksdb_path = dir.as_ref().join("rocksdb");
+    let engine = create_raft_engine(raft_engine.clone());
+    let db: Arc<DB> = new_storage(rocksdb_path).await;
+    let log_store = RocksLogStore::new(db.clone(), 0,engine.clone());
     let sm_store = StateMachineStore::new(db.clone(), 0).await.unwrap();
     let network = NetworkFactory {};
 

@@ -52,7 +52,7 @@ impl Debug for RocksLogStore {
 }
 
 impl RocksLogStore {
-    pub fn new(db: Arc<DB>, group_id: GroupId) -> Self {
+    pub fn new(db: Arc<DB>, group_id: GroupId, engine: Arc<Engine>) -> Self {
         // 明确指定类型
         let cache: LruCache<u64, EntryOf<TypeConfig>> =
             LruCache::new(NonZeroUsize::new(MEM_LOG_SIZE).expect("MEM_LOG_SIZE must be > 0"));
@@ -60,19 +60,11 @@ impl RocksLogStore {
             .expect("column family `meta` not found");
         db.cf_handle("logs")
             .expect("column family `logs` not found");
-
-        let random_string: String = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(6)
-            .map(char::from)
-            .collect();
-        let path = format!("E:/tmp/raft/raft-engine/+ {}", random_string);
-        let engine = create_raft_engine(path);
         Self {
             db,
             cache: Arc::new(Mutex::new(cache)),
             _p: Default::default(),
-            engine: Arc::new(engine),
+            engine,
             group_id,
         }
     }
@@ -328,14 +320,14 @@ impl RaftLogStorage<TypeConfig> for RocksLogStore {
         // 但上面的 `pub_cf()` 必须在这个函数中调用，而不能放到另一个任务里。
         // 因为当函数返回时，需要能够读取到这些日志条目。
         // let db = self.db.clone();
-        let res = self.engine
+        let res = self
+            .engine
             .write(&mut batch, false)
             .map(|_| ())
             .map_err(io::Error::other);
         let engine = self.engine.clone();
         std::thread::spawn(move || {
-            let res = engine.sync().map(|_| ())
-                .map_err(io::Error::other);
+            let res = engine.sync().map(|_| ()).map_err(io::Error::other);
             callback.io_completed(res);
             let elapsed = start.elapsed();
             tracing::info!("rocksdb append elapsed: {:?}", elapsed);
