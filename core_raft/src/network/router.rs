@@ -1,7 +1,9 @@
+use crate::network::node::{GroupId, NodeId, TypeConfig};
 use crate::server::client::client::RpcMultiClient;
 use crate::server::handler::model::{AppendEntriesReq, InstallFullSnapshotReq, VoteReq};
+use bincode2::config;
 use openraft::alias::VoteOf;
-use openraft::error::{RPCError, ReplicationClosed, StreamingError};
+use openraft::error::{RPCError, ReplicationClosed, StreamingError, Unreachable};
 use openraft::network::RPCOption;
 use openraft::raft::{
     AppendEntriesRequest, AppendEntriesResponse, SnapshotResponse, VoteRequest, VoteResponse,
@@ -9,9 +11,9 @@ use openraft::raft::{
 use openraft::{OptionalSend, RaftNetworkFactory, Snapshot};
 use openraft_multi::{GroupNetworkAdapter, GroupNetworkFactory, GroupRouter};
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::network::node::{GroupId, NodeId, TypeConfig};
 
 pub type MultiNetworkFactory = GroupNetworkFactory<Router, GroupId>;
 impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
@@ -21,8 +23,14 @@ impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
     //TODO 定时重连
     async fn new_client(&mut self, target: NodeId, node: &openraft::BasicNode) -> Self::Network {
         let router = self.factory.clone();
-        let client = RpcMultiClient::connect(&*node.addr).await.unwrap();
-        router.nodes.write().await.insert(target, client);
+        match RpcMultiClient::connect(&*node.addr).await {
+            Ok(client) => {
+                router.nodes.write().await.insert(target, client);
+            }
+            Err(_) => {
+                tracing::warn!("connect to node {} failed", node.addr)
+            }
+        }
         GroupNetworkAdapter::new(router, target, self.group_id.clone())
     }
 }
@@ -57,17 +65,25 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
             append_entries: rpc,
             group_id,
         };
-        let res = self
-            .nodes
-            .read()
-            .await
-            .get(&target)
-            .unwrap()
-            .call(7, req)
-            .await
-            .unwrap();
-        Ok(res)
+        match self.nodes.read().await.get(&target) {
+            None => {
+                tracing::info!("node {} not found (target: {})", target as u64, target as u64);
+                Err(RPCError::Unreachable(Unreachable::from_string(
+                    format!("node {} not found", target as u64),
+                )))
+            }
+            Some(client) => match client.call(7, req).await {
+                Ok(r) => Ok(r),
+                Err(e) => {
+                    tracing::warn!("RPC call to node {} failed: {}", target as u64, e);
+                    Err(RPCError::Unreachable(Unreachable::from_string(
+                        format!("RPC call to node {} failed: {}", target as u64, e),
+                    )))
+                }
+            },
+        }
     }
+
 
     async fn vote(
         &self,
@@ -80,16 +96,24 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
             vote: rpc,
             group_id,
         };
-        let res = self
-            .nodes
-            .read()
-            .await
-            .get(&target)
-            .unwrap()
-            .call(6, req)
-            .await
-            .unwrap();
-        Ok(res)
+        match self.nodes.read().await.get(&target) {
+            None => {
+                tracing::info!("node {} not found (target: {})", target as u64, target as u64);
+                Err(RPCError::Unreachable(Unreachable::from_string(
+                    format!("node {} not found", target as u64),
+                )))
+            }
+            Some(client) => match client.call(6, req).await {
+                Ok(r) => Ok(r),
+                Err(e) => {
+                    tracing::warn!("RPC call to node {} failed: {}", target as u64, e);
+                    let unreachable = Unreachable::from_string(
+                        format!("RPC call to node {} failed: {}", target as u64, e),
+                    );
+                    Err(RPCError::Unreachable(unreachable))
+                }
+            },
+        }
     }
 
     async fn full_snapshot(

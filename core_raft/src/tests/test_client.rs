@@ -11,7 +11,7 @@ async fn test_add() {
     let mut client = RpcMultiClient::connect("127.0.0.1:3003").await.unwrap();
 
     let mut total_elapsed = Duration::new(0, 0);
-    let iterations = 100;
+
 
     for i in 0..100 {
         let start = Instant::now();
@@ -32,8 +32,8 @@ async fn test_add() {
         // 可选：打印每次的结果用于调试
         // println!("第{}次 - 毫秒: {}", i + 1, elapsed.as_millis());
     }
-    let avg_elapsed = total_elapsed / iterations;
-
+    let avg_elapsed = total_elapsed / 100;
+    let iterations = 100;
     time::sleep(Duration::from_secs(1));
     for i in 0..iterations {
         time::sleep(Duration::from_millis(2));

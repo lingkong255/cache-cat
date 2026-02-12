@@ -10,6 +10,7 @@ use crate::store::rocks_log_store::RocksLogStore;
 use std::path::Path;
 use std::sync::Arc;
 use rocksdb::DB;
+use crate::server::core::config::{ONE, THREE, TWO};
 use crate::store::raft_engine::create_raft_engine;
 
 pub async fn start_raft_app<P>(node_id: NodeId, dir: P, addr: String) -> std::io::Result<()>
@@ -54,19 +55,19 @@ where
         nodes.insert(
             1,
             BasicNode {
-                addr: "127.0.0.1:3001".to_string(),
+                addr: ONE.to_string(),
             },
         );
         nodes.insert(
             2,
             BasicNode {
-                addr: "127.0.0.1:3002".to_string(),
+                addr: TWO.to_string(),
             },
         );
         nodes.insert(
             3,
             BasicNode {
-                addr: "127.0.0.1:3003".to_string(),
+                addr: THREE.to_string(),
             },
         );
         app.raft.initialize(nodes).await.unwrap();
@@ -86,19 +87,19 @@ where
         nodes.insert(
             1,
             BasicNode {
-                addr: "127.0.0.1:3001".to_string(),
+                addr: ONE.to_string(),
             },
         );
         nodes.insert(
             2,
             BasicNode {
-                addr: "127.0.0.1:3002".to_string(),
+                addr: TWO.to_string(),
             },
         );
         nodes.insert(
             3,
             BasicNode {
-                addr: "127.0.0.1:3003".to_string(),
+                addr: THREE.to_string(),
             },
         );
         for app in &apps {

@@ -16,11 +16,11 @@ use std::time::Instant;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use crate::server::core::config::TCP_CONNECT_NUM;
 
 // --- 槽位管理器配置 ---
 const MAX_PENDING: usize = 65536; // 必须是 2 的幂
 const INDEX_MASK: u32 = (MAX_PENDING - 1) as u32;
-const TCP_CONNECT_NUM: u32 = 5;
 
 /// 预分配的响应槽位
 struct Slot {

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::network::model::{Request, Response};
-use crate::network::node::{GROUP_NUM, GroupId, TypeConfig};
+use crate::network::node::{ GroupId, TypeConfig};
 use crate::server::handler::model::SetRes;
 use crate::store::rocks_log_store::RocksLogStore;
 use futures::Stream;

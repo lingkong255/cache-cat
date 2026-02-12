@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::sync::OnceLock;
 
+pub const ONE: &str = "127.0.0.1:3001";
+pub const TWO: &str = "127.0.0.1:3002";
+
+pub const THREE: &str = "127.0.0.1:3003";
+
+pub const GROUP_NUM: i16 = 2;
+pub const TCP_CONNECT_NUM: u32 = 5;
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ServerConfig {
     pub port: u16,

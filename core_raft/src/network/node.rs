@@ -5,16 +5,13 @@ use crate::store::raft_engine::create_raft_engine;
 use crate::store::rocks_log_store::RocksLogStore;
 use crate::store::rocks_store::{StateMachineData, new_storage};
 use openraft::Config;
-use openraft_multi::GroupNetworkFactory;
-use rand::Rng;
-use rand::distributions::Alphanumeric;
+use openraft::SnapshotPolicy::Never;
 use rocksdb::{DB, DBWithThreadMode};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::fs;
-use tokio::sync::Mutex;
+use crate::server::core::config::GROUP_NUM;
 
 openraft::declare_raft_types!(
     /// Declare the type configuration for example K/V store.
@@ -33,7 +30,7 @@ pub type LogStore = crate::store::rocks_log_store::RocksLogStore;
 pub type StateMachineStore = crate::store::rocks_store::StateMachineStore;
 pub type Raft = openraft::Raft<TypeConfig>;
 
-pub const GROUP_NUM: i16 = 1;
+
 pub struct CacheCatApp {
     pub id: NodeId,
     pub addr: String,
@@ -86,22 +83,24 @@ pub async fn create_node<P>(addr: &str, node_id: NodeId, dir: P) -> Node
 where
     P: AsRef<Path>,
 {
-    let raft_engine = dir.as_ref().join("raft-engine");
     let rocksdb_path = dir.as_ref().join("rocksdb");
-    let engine = create_raft_engine(raft_engine.clone());
     let db: Arc<DB> = new_storage(rocksdb_path).await;
     let mut node = Node::new(node_id, addr.to_string());
+    // let raft_engine = dir.as_ref().join("raft-engine");
+    // let engine = create_raft_engine(raft_engine.clone());
     for i in 0..GROUP_NUM {
         let group_id = i as GroupId;
         let config = Arc::new(Config {
             heartbeat_interval: 2500,
             election_timeout_min: 2990,
             election_timeout_max: 5990, // 添加最大选举超时时间
+            snapshot_policy: Never,
             ..Default::default()
         });
+        let raft_engine = dir.as_ref().join(format!("raft-engine-{}", group_id));
+        let engine = create_raft_engine(raft_engine.clone());
         let router = Router::new(addr.to_string());
-        let network = MultiNetworkFactory::new(router.clone(), group_id);
-
+        let network = MultiNetworkFactory::new(router, group_id);
         let log_store = RocksLogStore::new(db.clone(), group_id, engine.clone());
         let sm_store = StateMachineStore::new(db.clone(), group_id).await.unwrap();
         let raft = openraft::Raft::new(
