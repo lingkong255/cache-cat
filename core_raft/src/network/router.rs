@@ -28,7 +28,7 @@ impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
                 router.nodes.write().await.insert(target, client);
             }
             Err(_) => {
-                tracing::warn!("connect to node {} failed", node.addr)
+                tracing::info!("connect to node {} failed", node.addr)
             }
         }
         GroupNetworkAdapter::new(router, target, self.group_id.clone())
@@ -75,7 +75,7 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
             Some(client) => match client.call(7, req).await {
                 Ok(r) => Ok(r),
                 Err(e) => {
-                    tracing::warn!("RPC call to node {} failed: {}", target as u64, e);
+                    tracing::info!("RPC call to node {} failed: {}", target as u64, e);
                     Err(RPCError::Unreachable(Unreachable::from_string(
                         format!("RPC call to node {} failed: {}", target as u64, e),
                     )))
@@ -106,7 +106,7 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
             Some(client) => match client.call(6, req).await {
                 Ok(r) => Ok(r),
                 Err(e) => {
-                    tracing::warn!("RPC call to node {} failed: {}", target as u64, e);
+                    tracing::info!("RPC call to node {} failed: {}", target as u64, e);
                     let unreachable = Unreachable::from_string(
                         format!("RPC call to node {} failed: {}", target as u64, e),
                     );

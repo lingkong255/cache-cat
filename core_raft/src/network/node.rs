@@ -88,19 +88,19 @@ where
     let mut node = Node::new(node_id, addr.to_string());
     // let raft_engine = dir.as_ref().join("raft-engine");
     // let engine = create_raft_engine(raft_engine.clone());
+    let config = Arc::new(Config {
+        heartbeat_interval: 250,
+        election_timeout_min: 299,
+        election_timeout_max: 599, // 添加最大选举超时时间
+        snapshot_policy: Never,
+        ..Default::default()
+    });
     for i in 0..GROUP_NUM {
         let group_id = i as GroupId;
-        let config = Arc::new(Config {
-            heartbeat_interval: 2500,
-            election_timeout_min: 2990,
-            election_timeout_max: 5990, // 添加最大选举超时时间
-            snapshot_policy: Never,
-            ..Default::default()
-        });
         let raft_engine = dir.as_ref().join(format!("raft-engine-{}", group_id));
         let engine = create_raft_engine(raft_engine.clone());
         let router = Router::new(addr.to_string());
-        let network = MultiNetworkFactory::new(router, group_id);
+        let network = MultiNetworkFactory::new(router.clone(), group_id);
         let log_store = RocksLogStore::new(db.clone(), group_id, engine.clone());
         let sm_store = StateMachineStore::new(db.clone(), group_id).await.unwrap();
         let raft = openraft::Raft::new(

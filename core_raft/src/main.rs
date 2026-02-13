@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 async fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
     let base = r"E:\tmp\raft\raft-engine";
-    // let base_system = r"C:\zdy\temp\raft-engine";
+    let base_system = r"C:\zdy\temp\raft-engine";
 
     // let base_dir = tempfile::tempdir()?;
     // let base_system = base_dir.path();
@@ -31,7 +31,7 @@ async fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
     // 在临时目录下创建每个节点的子目录
     let d1 = TempDir::new_in(base)?;
     let d2 = TempDir::new_in(base)?;
-    let d3 = TempDir::new_in(base)?;
+    let d3 = TempDir::new_in(base_system)?;
     // Setup the logger
     tracing_subscriber::fmt()
         .with_target(true)
@@ -43,7 +43,7 @@ async fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let num_cpus = std::thread::available_parallelism()?.get();
     let _h1 = thread::spawn(move || {
-        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus/2);
         let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
             1,
             d1.path(),
@@ -51,7 +51,7 @@ async fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
         ));
     });
     // let _h2 = thread::spawn(move || {
-    //     let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
+    //     let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus/2);
     //     let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
     //         2,
     //         d2.path(),
@@ -59,7 +59,7 @@ async fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
     //     ));
     // });
     let _h3 = thread::spawn(move || {
-        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus/2);
         let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
             3,
             d3.path(),
@@ -92,7 +92,7 @@ async fn raft() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let num_cpus = std::thread::available_parallelism()?.get();
     let _h1 = thread::spawn(move || {
-        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus/2);
         let x = rt.block_on(network::raft_rocksdb::start_raft_app(
             1,
             d1.path(),
@@ -100,7 +100,7 @@ async fn raft() -> Result<(), Box<dyn std::error::Error>> {
         ));
     });
     let _h2 = thread::spawn(move || {
-        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus/2);
         let x = rt.block_on(network::raft_rocksdb::start_raft_app(
             2,
             d2.path(),
@@ -109,7 +109,7 @@ async fn raft() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let _h3 = thread::spawn(move || {
-        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus);
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus/2);
         let x = rt.block_on(network::raft_rocksdb::start_raft_app(
             3,
             d3.path(),
