@@ -18,11 +18,9 @@ use openraft::storage::RaftLogStorage;
 use openraft::type_config::TypeConfigExt;
 use openraft::{Entry, LogState};
 use raft_engine::{Engine, LogBatch};
-use rand::Rng;
-use rand::distributions::Alphanumeric;
 use rocksdb::ColumnFamily;
 use rocksdb::DB;
-use rocksdb::Direction;
+use serde_yaml::with::singleton_map_recursive::deserialize;
 use std::error::Error;
 use std::fmt::{Debug, Formatter};
 use std::io;
@@ -31,12 +29,11 @@ use std::num::NonZeroUsize;
 use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{Mutex, MutexGuard, RwLock};
+use tokio::sync::{Mutex, MutexGuard};
 
 const MEM_LOG_SIZE: usize = 2000;
 #[derive(Clone)]
 pub struct RocksLogStore {
-    db: Arc<DB>,
     cache: Arc<Mutex<LruCache<u64, EntryOf<TypeConfig>>>>,
     _p: PhantomData<TypeConfig>,
     engine: Arc<Engine>,
@@ -45,23 +42,17 @@ pub struct RocksLogStore {
 impl Debug for RocksLogStore {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RocksLogStore")
-            .field("db", &self.db)
             .field("cache", &self.cache)
             .finish()
     }
 }
 
 impl RocksLogStore {
-    pub fn new(db: Arc<DB>, group_id: GroupId, engine: Arc<Engine>) -> Self {
+    pub fn new( group_id: GroupId, engine: Arc<Engine>) -> Self {
         // 明确指定类型
         let cache: LruCache<u64, EntryOf<TypeConfig>> =
             LruCache::new(NonZeroUsize::new(MEM_LOG_SIZE).expect("MEM_LOG_SIZE must be > 0"));
-        db.cf_handle("meta")
-            .expect("column family `meta` not found");
-        db.cf_handle("logs")
-            .expect("column family `logs` not found");
         Self {
-            db,
             cache: Arc::new(Mutex::new(cache)),
             _p: Default::default(),
             engine,
@@ -122,39 +113,42 @@ impl RocksLogStore {
         Some(out)
     }
 
-    fn cf_meta(&self) -> &ColumnFamily {
-        self.db.cf_handle("meta").unwrap()
-    }
-
-    fn cf_logs(&self) -> &ColumnFamily {
-        self.db.cf_handle("logs").unwrap()
-    }
-
     /// Get a store metadata.
     ///
     /// It returns `None` if the store does not have such a metadata stored.
     fn get_meta<M: StoreMeta<TypeConfig>>(&self) -> Result<Option<M::Value>, io::Error> {
+        let key = M::KEY.as_bytes();
         let bytes = self
-            .db
-            .get_cf(self.cf_meta(), M::KEY)
+            .engine
+            .get_message::<M::Value>(self.group_id as u64, key)
             .map_err(|e| io::Error::other(e.to_string()))?;
-
-        let Some(bytes) = bytes else {
-            return Ok(None);
+        let res = match bytes {
+            None => return Ok(None),
+            Some(bytes) => bytes,
         };
-        let t = bincode2::deserialize(&bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(Some(t))
+
+        // let bytes = self
+        //     .db
+        //     .get_cf(self.cf_meta(), M::KEY)
+        //     .map_err(|e| io::Error::other(e.to_string()))?;
+        // let Some(bytes) = bytes else {
+        //     return Ok(None);
+        // };
+        // let t = bincode2::deserialize(res)
+        //     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        Ok(Some(res))
     }
 
     /// Save a store metadata.
     fn put_meta<M: StoreMeta<TypeConfig>>(&self, value: &M::Value) -> Result<(), io::Error> {
-        let bin_value = bincode2::serialize(value)
+        let mut batch = LogBatch::with_capacity(256);
+        batch
+            .put_message(self.group_id as u64, M::KEY.as_bytes().to_vec(), value)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-        self.db
-            .put_cf(self.cf_meta(), M::KEY, bin_value)
-            .map_err(|e| io::Error::other(e.to_string()))?;
+        self.engine
+            .write(&mut batch, false)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         Ok(())
     }
@@ -165,8 +159,6 @@ impl RaftLogReader<TypeConfig> for RocksLogStore {
         &mut self,
         range: RB,
     ) -> Result<Vec<<TypeConfig as RaftTypeConfig>::Entry>, io::Error> {
-
-
         let mut start = match range.start_bound() {
             Bound::Included(&n) => n,
             Bound::Excluded(&n) => n + 1, // 排除转换为包含
@@ -253,10 +245,9 @@ impl RaftLogStorage<TypeConfig> for RocksLogStore {
     async fn save_vote(&mut self, vote: &VoteOf<TypeConfig>) -> Result<(), io::Error> {
         self.put_meta::<meta::Vote>(vote)?;
         // Vote must be persisted to disk before returning.
-        let db = self.db.clone();
+        let engine = self.engine.clone();
         TypeConfig::spawn_blocking(move || {
-            db.flush_wal(true)
-                .map_err(|e| io::Error::other(e.to_string()))
+            engine.sync().map_err(|e| io::Error::other(e.to_string()))
         })
         .await??;
         Ok(())
@@ -320,7 +311,6 @@ impl RaftLogStorage<TypeConfig> for RocksLogStore {
         // 因此，无需在事务中执行此操作
         self.put_meta::<meta::LastPurged>(&log_id)?;
 
-
         self.engine
             .compact_to(self.group_id as u64, log_id.index + 1);
 
@@ -367,20 +357,4 @@ mod meta {
         const KEY: &'static str = "vote";
         type Value = VoteOf<C>;
     }
-}
-
-/// converts an id to a byte vector for storing in the database.
-/// Note that we're using big endian encoding to ensure correct sorting of keys
-fn id_to_bin(id: u64) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(8);
-    buf.write_u64::<BigEndian>(id).unwrap();
-    buf
-}
-
-fn bin_to_id(buf: &[u8]) -> u64 {
-    (&buf[0..8]).read_u64::<BigEndian>().unwrap()
-}
-
-fn read_logs_err(e: impl Error + 'static) -> io::Error {
-    io::Error::other(e.to_string())
 }

@@ -27,7 +27,7 @@ where
     let rocksdb_path = dir.as_ref().join("rocksdb");
     let engine = create_raft_engine(raft_engine.clone());
     let db: Arc<DB> = new_storage(rocksdb_path).await;
-    let log_store = RocksLogStore::new(db.clone(), 0,engine.clone());
+    let log_store = RocksLogStore::new( 0,engine.clone());
     let sm_store = StateMachineStore::new(db.clone(), 0).await.unwrap();
     let network = NetworkFactory {};
 
