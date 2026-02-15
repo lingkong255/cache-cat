@@ -1,13 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::io;
 use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
-
 use crate::network::model::{Request, Response};
-use crate::network::node::{ GroupId, TypeConfig};
+use crate::network::node::{GroupId, TypeConfig};
 use crate::server::handler::model::SetRes;
-use crate::store::rocks_log_store::RocksLogStore;
 use futures::Stream;
 use futures::TryStreamExt;
 use openraft::storage::EntryResponder;
@@ -263,10 +261,10 @@ pub(crate) async fn new_storage<P: AsRef<Path>>(db_path: P) -> Arc<DB> {
     let store = ColumnFamilyDescriptor::new("store", db_opts.clone());
     let meta = ColumnFamilyDescriptor::new("meta", db_opts.clone());
     let logs = ColumnFamilyDescriptor::new("logs", db_opts.clone());
-    
+
     //打开多个数据库并创建列族
     let db: DBWithThreadMode<SingleThreaded> =
-        DB::open_cf_descriptors(&db_opts, db_path, vec![store,meta,logs]).unwrap();
+        DB::open_cf_descriptors(&db_opts, db_path, vec![store, meta, logs]).unwrap();
 
     let db = Arc::new(db);
     db

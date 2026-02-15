@@ -61,29 +61,39 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
         rpc: AppendEntriesRequest<TypeConfig>,
         option: RPCOption,
     ) -> Result<AppendEntriesResponse<TypeConfig>, RPCError<TypeConfig>> {
+        if !rpc.entries.is_empty() {
+            let i = rpc.entries.len();
+            tracing::info!("send entries len:{}", i);
+        }
         let req = AppendEntriesReq {
             append_entries: rpc,
             group_id,
         };
+
         match self.nodes.read().await.get(&target) {
             None => {
-                tracing::info!("node {} not found (target: {})", target as u64, target as u64);
-                Err(RPCError::Unreachable(Unreachable::from_string(
-                    format!("node {} not found", target as u64),
-                )))
+                tracing::info!(
+                    "node {} not found (target: {})",
+                    target as u64,
+                    target as u64
+                );
+                Err(RPCError::Unreachable(Unreachable::from_string(format!(
+                    "node {} not found",
+                    target as u64
+                ))))
             }
             Some(client) => match client.call(7, req).await {
                 Ok(r) => Ok(r),
                 Err(e) => {
                     tracing::info!("RPC call to node {} failed: {}", target as u64, e);
-                    Err(RPCError::Unreachable(Unreachable::from_string(
-                        format!("RPC call to node {} failed: {}", target as u64, e),
-                    )))
+                    Err(RPCError::Unreachable(Unreachable::from_string(format!(
+                        "RPC call to node {} failed: {}",
+                        target as u64, e
+                    ))))
                 }
             },
         }
     }
-
 
     async fn vote(
         &self,
@@ -98,18 +108,24 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
         };
         match self.nodes.read().await.get(&target) {
             None => {
-                tracing::info!("node {} not found (target: {})", target as u64, target as u64);
-                Err(RPCError::Unreachable(Unreachable::from_string(
-                    format!("node {} not found", target as u64),
-                )))
+                tracing::info!(
+                    "node {} not found (target: {})",
+                    target as u64,
+                    target as u64
+                );
+                Err(RPCError::Unreachable(Unreachable::from_string(format!(
+                    "node {} not found",
+                    target as u64
+                ))))
             }
             Some(client) => match client.call(6, req).await {
                 Ok(r) => Ok(r),
                 Err(e) => {
                     tracing::info!("RPC call to node {} failed: {}", target as u64, e);
-                    let unreachable = Unreachable::from_string(
-                        format!("RPC call to node {} failed: {}", target as u64, e),
-                    );
+                    let unreachable = Unreachable::from_string(format!(
+                        "RPC call to node {} failed: {}",
+                        target as u64, e
+                    ));
                     Err(RPCError::Unreachable(unreachable))
                 }
             },

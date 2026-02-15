@@ -37,11 +37,11 @@ async fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
         .with_level(true)
         .with_ansi(false)
         .with_env_filter(EnvFilter::from_default_env())
-        // .with_max_level(tracing::Level::WARN)
+        .with_max_level(tracing::Level::WARN)
         .init();
     let num_cpus = std::thread::available_parallelism()?.get();
     let _h1 = thread::spawn(move || {
-        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 2);
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 3);
         let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
             1,
             d1.path(),
@@ -49,15 +49,15 @@ async fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
         ));
     });
     let _h2 = thread::spawn(move || {
-        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 2);
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 3);
         let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
             2,
             d2.path(),
-            String::from("127.0.0.1:3002"),
+            String::from(TWO),
         ));
     });
     let _h3 = thread::spawn(move || {
-        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 2);
+        let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 3);
         let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
             3,
             d3.path(),

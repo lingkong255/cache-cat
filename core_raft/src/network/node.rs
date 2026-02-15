@@ -8,10 +8,12 @@ use crate::store::rocks_store::{StateMachineData, new_storage};
 use openraft::Config;
 use openraft::SnapshotPolicy::Never;
 use rocksdb::{DB, DBWithThreadMode};
+use serde::de::Unexpected::Option;
 use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tempfile::TempDir;
 
 openraft::declare_raft_types!(
     /// Declare the type configuration for example K/V store.
@@ -92,12 +94,19 @@ where
         election_timeout_min: 299,
         election_timeout_max: 599, // 添加最大选举超时时间
         snapshot_policy: Never,
+        max_payload_entries: 100000,
+        max_append_entries: Some(100000),
         ..Default::default()
     });
     for i in 0..GROUP_NUM {
         let group_id = i as GroupId;
         // let raft_engine = dir.as_ref().join(format!("raft-engine-{}", group_id));
-        // let engine = create_raft_engine(raft_engine.clone());
+        // let path = if i == 1 {
+        //     TempDir::new_in(r"C:\zdy\temp\raft-engine").unwrap().into_path()
+        // } else {
+        //     TempDir::new_in(r"E:\tmp\raft\raft-engine").unwrap().into_path()
+        // };
+        // let engine = create_raft_engine(path);
         let router = Router::new(addr.to_string());
         let network = MultiNetworkFactory::new(router.clone(), group_id);
         let log_store = RocksLogStore::new(group_id, engine.clone());
