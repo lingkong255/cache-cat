@@ -1,9 +1,8 @@
-use crate::network::node::{App, CacheCatApp};
-use crate::server::core::config::{get_config, init_config};
+use crate::network::node::App;
+use crate::server::core::config::init_config;
 use crate::server::handler::external_handler::HANDLER_TABLE;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures::{SinkExt, StreamExt};
-use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -16,8 +15,8 @@ pub async fn start_server(app: App, addr: String) -> std::io::Result<()> {
     // let config = get_config();
     let listener = TcpListener::bind(addr).await?;
     println!("Listening on: {}", listener.local_addr()?);
-
     loop {
+        let app = app.clone();
         let (socket, peer_addr) = match listener.accept().await {
             Ok(p) => p,
             Err(e) => {
@@ -25,40 +24,34 @@ pub async fn start_server(app: App, addr: String) -> std::io::Result<()> {
                 continue;
             }
         };
-        // 关闭 Nagle
-        if let Err(e) = socket.set_nodelay(true) {
-            eprintln!("set_nodelay 失败: {}", e);
-        }
-        println!("接收到来自 {} 的新连接", peer_addr);
-
-        let app = app.clone();
-
-        // 使用 LengthDelimitedCodec -> 自动处理 4-byte length prefix（frame 中不含 length）
-        let codec = LengthDelimitedCodec::new();
-        let framed = Framed::new(socket, codec);
-
-        // split 为读写两部分
-        let (writer, mut reader) = framed.split();
-
-        // channel 用于把要写入的 payload（不含长度头）从各处理任务发送到写任务
-        let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
-
-        // 写任务：负责把 payload 通过 framed sink 发送出去（codec 会添加长度头）
-        tokio::spawn(async move {
-            let mut writer = writer;
-            while let Some(payload) = rx.recv().await {
-                if let Err(e) = writer.send(payload).await {
-                    eprintln!("写入 TCP（sink）失败 ({}): {}", peer_addr, e);
-                    break;
-                }
-            }
-            // 当 rx 关闭或发生错误，writer 会被丢弃，连接结束
-            tracing::info!("写任务结束: {}", peer_addr);
-        });
-
         // 读循环：从 framed stream 中取出每个帧（frame 是去除 length header 后的 payload）
-        let tx_for_handling = tx.clone();
         tokio::spawn(async move {
+            // 关闭 Nagle
+            if let Err(e) = socket.set_nodelay(true) {
+                eprintln!("set_nodelay 失败: {}", e);
+            }
+            println!("接收到来自 {} 的新连接", peer_addr);
+            // 使用 LengthDelimitedCodec -> 自动处理 4-byte length prefix（frame 中不含 length）
+            let codec = LengthDelimitedCodec::new();
+            let framed = Framed::new(socket, codec);
+            // split 为读写两部分
+            let (writer, mut reader) = framed.split();
+
+            // channel 用于把要写入的 payload（不含长度头）从各处理任务发送到写任务
+            let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
+            let tx_for_handling = tx.clone();
+            // 写任务：负责把 payload 通过 framed sink 发送出去（codec 会添加长度头）
+            tokio::spawn(async move {
+                let mut writer = writer;
+                while let Some(payload) = rx.recv().await {
+                    if let Err(e) = writer.send(payload).await {
+                        eprintln!("写入 TCP（sink）失败 ({}): {}", peer_addr, e);
+                        break;
+                    }
+                }
+                // 当 rx 关闭或发生错误，writer 会被丢弃，连接结束
+                tracing::info!("写任务结束: {}", peer_addr);
+            });
             while let Some(frame_result) = reader.next().await {
                 match frame_result {
                     Ok(mut frame_bytes) => {
