@@ -1,3 +1,4 @@
+use crate::server::core::config::TCP_CONNECT_NUM;
 use bincode2;
 use bytes::{BufMut, Bytes, BytesMut};
 use crossbeam_utils::CachePadded;
@@ -16,7 +17,6 @@ use std::time::Instant;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use crate::server::core::config::TCP_CONNECT_NUM;
 
 // --- 槽位管理器配置 ---
 const MAX_PENDING: usize = 65536; // 必须是 2 的幂
@@ -89,7 +89,7 @@ impl RpcMultiClient {
     }
     pub async fn connect_with_num(
         addr: &str,
-        connect_num: usize
+        connect_num: usize,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let mut clients = Vec::new();
         for _ in 0..connect_num {
@@ -101,7 +101,6 @@ impl RpcMultiClient {
             next_client: AtomicU32::new(0),
         })
     }
-
 
     pub async fn call<Req, Res>(
         &self,

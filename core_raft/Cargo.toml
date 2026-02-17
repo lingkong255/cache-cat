@@ -6,6 +6,8 @@ edition = "2024"
 [profile.release]
 debug = true
 
+
+
 [dependencies]
 #openraft = { version = "0.9.21", features = ["type-alias"] }
 openraft = { git = "https://github.com/databendlabs/openraft", tag = "v0.10.0-alpha.13", features = ["type-alias", "serde"] }
@@ -19,7 +21,6 @@ bincode2 = "2.0.1"
 bytes = "1.11.0"
 moka = { version = "0.12.12", features = ["sync"] }
 async-trait = "0.1.89"
-tracing-subscriber = { version = "0.3.0", features = ["env-filter"] }
 rocksdb = "0.24.0"
 byteorder = "1.5.0"
 tempfile = "3.24.0"
@@ -36,4 +37,10 @@ raft-engine = { git = "https://github.com/nasuiyile/raft-engine-serde" }
 rand = "0.8"
 rand_distr = "0.4"
 serde_yaml = "0.9.33"
-console-subscriber = "0.5.0"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
+console-subscriber = { version = "0.5", optional = true }
+tracing-flame = { version = "0.2", optional = true }
+
+[features]
+tokio-console = ["console-subscriber"]
+flamegraph = ["tracing-flame"]

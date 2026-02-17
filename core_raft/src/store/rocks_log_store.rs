@@ -233,7 +233,6 @@ impl RaftLogStorage<TypeConfig> for RocksLogStore {
         Ok(())
     }
 
-    //心跳不会走到这里
     async fn append<I>(
         &mut self,
         entries: I,
@@ -260,15 +259,13 @@ impl RaftLogStorage<TypeConfig> for RocksLogStore {
             .map(|_| ())
             .map_err(io::Error::other);
         let engine = self.engine.clone();
-        tokio::spawn(
-            async move {
-                let res = engine.sync().map(|_| ()).map_err(io::Error::other);
-                callback.io_completed(res);
-                let elapsed = start.elapsed();
-                tracing::info!("raft-engine append elapsed: {:?}", elapsed);
-            }
-            .instrument(tracing::info_span!("raft-engine-sync")),
-        );
+        let _hand = tokio::task::spawn_blocking(move || {
+            let res = engine.sync().map(|_| ()).map_err(io::Error::other);
+            callback.io_completed(res);
+            let elapsed = start.elapsed();
+            tracing::info!("raft-engine append elapsed: {:?}", elapsed);
+        })
+            .instrument(tracing::info_span!("raft-engine-sync"));
         // Return now, and the callback will be invoked later when IO is done.
         Ok(())
     }

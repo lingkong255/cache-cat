@@ -39,7 +39,7 @@ pub struct CacheCatApp {
     pub group_id: GroupId,
     pub state_machine: StateMachineStore,
 }
-pub type App = Arc<Vec<Box<CacheCatApp>>>;
+pub type App = Arc<Vec<Arc<CacheCatApp>>>;
 pub fn get_app(app: &App, group_id: GroupId) -> &CacheCatApp {
     app.iter().find(|app| app.group_id == group_id).unwrap()
 }
@@ -90,17 +90,18 @@ where
     let raft_engine = dir.as_ref().join("raft-engine");
     let engine = create_raft_engine(raft_engine.clone());
     let config = Arc::new(Config {
-        heartbeat_interval: 250,
-        election_timeout_min: 299,
-        election_timeout_max: 599, // 添加最大选举超时时间
+        heartbeat_interval: 2500,
+        election_timeout_min: 2990,
+        election_timeout_max: 5990, // 添加最大选举超时时间
         snapshot_policy: Never,
-        max_payload_entries: 100000,
-        max_append_entries: Some(100000),
+        max_payload_entries: 10000000,
+        purge_batch_size: 10000000,
+        max_append_entries: Some(10000000),
         ..Default::default()
     });
     for i in 0..GROUP_NUM {
         let group_id = i as GroupId;
-        let raft_engine = dir.as_ref().join(format!("raft-engine-{}", group_id));
+        // let raft_engine = dir.as_ref().join(format!("raft-engine-{}", group_id));
         // let path = if i == 1 {
         // let path = TempDir::new_in(r"E:\tmp\raft\raft-engine").unwrap().into_path();
         // } else {

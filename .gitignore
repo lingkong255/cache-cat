@@ -49,3 +49,4 @@ Thumbs.db
 
 # 覆盖测试覆盖率文件
 *.profraw
+core_raft/flamegraph.folded
