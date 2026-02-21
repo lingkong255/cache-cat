@@ -117,7 +117,7 @@ impl RpcMultiClient {
 }
 
 #[derive(Clone)]
-struct RpcClient {
+pub struct RpcClient {
     tx_writer: mpsc::Sender<BytesMut>,
     slot_table: Arc<SlotTable>,
     next_request_id: Arc<AtomicU32>,
@@ -137,8 +137,15 @@ impl RpcClient {
 
         // 写任务
         tokio::spawn(async move {
-            while let Some(req) = rx_writer.recv().await {
-                if let Err(_) = sink.send(Bytes::from(req)).await {
+            // 先等第一个消息
+            while let Some(mut req) = rx_writer.recv().await {
+                let _ = sink.feed(Bytes::from(req)).await;
+                // 贪婪地榨干当前 channel 里的积压消息
+                while let Ok(req) = rx_writer.try_recv() {
+                    let _ = sink.feed(Bytes::from(req)).await;
+                }
+                // 批量 syscall
+                if sink.flush().await.is_err() {
                     break;
                 }
             }

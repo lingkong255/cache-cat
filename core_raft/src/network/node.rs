@@ -109,7 +109,7 @@ where
         // };
         // let engine = create_raft_engine(path);
         let router = Router::new(addr.to_string());
-        let network = MultiNetworkFactory::new(router.clone(), group_id);
+        let network = MultiNetworkFactory::new(router, group_id);
         let log_store = RocksLogStore::new(group_id, engine.clone());
         let sm_store = StateMachineStore::new(db.clone(), group_id).await.unwrap();
         let raft = openraft::Raft::new(

@@ -55,20 +55,26 @@ pub async fn start_server(app: App, addr: String) -> std::io::Result<()> {
             });
             while let Some(frame_result) = reader.next().await {
                 match frame_result {
-                    Ok(mut frame_bytes) => {
+                    Ok(frame_bytes) => {
                         // frame_bytes 是 BytesMut（不含 length header）。
                         // 克隆 tx 并交给处理任务（保留并发）
                         let tx = tx_for_handling.clone();
                         let app = app.clone();
                         // freeze -> Bytes，避免复制
                         let package = frame_bytes.freeze();
-                        tokio::spawn(async move {
-                            let start = Instant::now();
-                            if let Err(_) = hand(app, tx, package).await {
-                                eprintln!("处理请求失败 {}", peer_addr);
+                        tokio::spawn(
+                            async move {
+                                let start = Instant::now();
+                                if let Err(_) = hand(app, tx, package).await {
+                                    eprintln!("处理请求失败 {}", peer_addr);
+                                }
+                                tracing::info!("rpc处理用时: {} 微秒", start.elapsed().as_micros());
                             }
-                            tracing::info!("rpc处理用时: {} 微秒", start.elapsed().as_micros());
-                        }.instrument(tracing::info_span!("rpc处理", peer_addr = peer_addr.to_string())));
+                            .instrument(tracing::info_span!(
+                                "rpc处理",
+                                peer_addr = peer_addr.to_string()
+                            )),
+                        );
                     }
                     Err(e) => {
                         eprintln!("读取帧失败 ({}): {}", peer_addr, e);

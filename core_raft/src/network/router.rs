@@ -1,5 +1,5 @@
 use crate::network::node::{GroupId, NodeId, TypeConfig};
-use crate::server::client::client::RpcMultiClient;
+use crate::server::client::client::{RpcClient, RpcMultiClient};
 use crate::server::handler::model::{AppendEntriesReq, InstallFullSnapshotReq, VoteReq};
 
 use openraft::alias::VoteOf;
@@ -22,10 +22,10 @@ impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
     //实际创建连接
     //TODO 定时重连
     async fn new_client(&mut self, target: NodeId, node: &openraft::BasicNode) -> Self::Network {
-        let router = self.factory.clone();
+        let mut router = self.factory.clone();
         match RpcMultiClient::connect(&*node.addr).await {
             Ok(client) => {
-                router.nodes.write().await.insert(target, client);
+                router.nodes.insert(target, client);
             }
             Err(_) => {
                 tracing::info!("connect to node {} failed", node.addr)
@@ -40,13 +40,13 @@ impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
 pub struct Router {
     /// Map from node_id to node connection.
     /// 所有节点都有这个nodes副本
-    pub nodes: Arc<RwLock<HashMap<NodeId, RpcMultiClient>>>,
+    pub nodes: Box<HashMap<NodeId, RpcMultiClient>>,
     pub addr: String,
 }
 impl Router {
     pub fn new(addr: String) -> Self {
         Self {
-            nodes: Arc::new(RwLock::new(HashMap::new())),
+            nodes: Box::new((HashMap::new())),
             addr,
         }
     }
@@ -72,7 +72,7 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
             group_id,
         };
 
-        match self.nodes.read().await.get(&target) {
+        match self.nodes.get(&target) {
             None => {
                 tracing::info!(
                     "node {} not found (target: {})",
@@ -123,7 +123,7 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
             vote: rpc,
             group_id,
         };
-        match self.nodes.read().await.get(&target) {
+        match self.nodes.get(&target) {
             None => {
                 tracing::info!(
                     "node {} not found (target: {})",
@@ -166,8 +166,6 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
             group_id,
         };
         self.nodes
-            .read()
-            .await
             .get(&target)
             .unwrap()
             .call(8, req)

@@ -1,5 +1,6 @@
 use core_raft::network;
 use core_raft::network::node::TypeConfig;
+use core_raft::network::raft_rocksdb::start_multi_raft_app;
 use core_raft::server::core::config::{ONE, THREE, TWO};
 use mimalloc::MiMalloc;
 use openraft::AsyncRuntime;
@@ -13,6 +14,7 @@ use tokio::runtime::Builder;
 #[cfg(feature = "flamegraph")]
 use tracing_flame::FlushGuard;
 use tracing_subscriber::EnvFilter;
+
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -45,27 +47,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     multi_raft()
 }
 fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
-    let base = r"E:\tmp\raft\raft-engine";
+    // let base = r"E:\tmp\raft\raft-engine";
     // let base_system = r"C:\zdy\temp\raft-engine";
 
-    // let base_dir = tempfile::tempdir()?;
-    // let base_system = base_dir.path();
+    let base_dir = tempfile::tempdir()?;
+    let base_system = base_dir.path();
     // 确保临时目录存在
-    // fs::create_dir_all(base)?;
+    fs::create_dir_all(base_system)?;
 
     // 在临时目录下创建每个节点的子目录
-    let d1 = TempDir::new_in(base).unwrap().keep();
-    let d2 = TempDir::new_in(base).unwrap().keep();
-    let d3 = TempDir::new_in(base).unwrap().keep();
+    let d1 = TempDir::new_in(base_system).unwrap().keep();
+    let d2 = TempDir::new_in(base_system).unwrap().keep();
+    let d3 = TempDir::new_in(base_system).unwrap().keep();
     // Setup the logger
-    // tracing_subscriber::fmt()
-    //     .with_target(true)
-    //     .with_thread_ids(true)
-    //     .with_level(true)
-    //     .with_ansi(false)
-    //     .with_env_filter(EnvFilter::from_default_env())
-    //     .with_max_level(tracing::Level::WARN)
-    //     .init();
+    tracing_subscriber::fmt()
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_level(true)
+        .with_ansi(false)
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_max_level(tracing::Level::WARN)
+        .init();
     let num_cpus = std::thread::available_parallelism()?.get();
 
     // let rt = Builder::new_multi_thread()
@@ -102,11 +104,7 @@ fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
             .enable_all()
             .build()
             .expect("Failed to create Tokio runtime");
-        let result = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
-            1,
-            d1.path(),
-            String::from(ONE),
-        ));
+        let result = rt.block_on(start_multi_raft_app(1, d1, String::from(ONE)));
     });
     let _h2 = thread::spawn(move || {
         let rt = Builder::new_multi_thread()
@@ -115,11 +113,7 @@ fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
             .enable_all()
             .build()
             .expect("Failed to create Tokio runtime");
-        let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
-            2,
-            d2.path(),
-            String::from(TWO),
-        ));
+        let x = rt.block_on(start_multi_raft_app(2, d2, String::from(TWO)));
     });
     let _h3 = thread::spawn(move || {
         let rt = Builder::new_multi_thread()
@@ -128,19 +122,15 @@ fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
             .enable_all()
             .build()
             .expect("Failed to create Tokio runtime");
-        let x = rt.block_on(network::raft_rocksdb::start_multi_raft_app(
-            3,
-            d3.path(),
-            String::from(THREE),
-        ));
+        let x = rt.block_on(start_multi_raft_app(3, d3, String::from(THREE)));
     });
     sleep(Duration::from_secs(40000));
     Ok(())
 }
 async fn raft() -> Result<(), Box<dyn std::error::Error>> {
-    let base = r"E:\tmp\raft\rocks";
-    // let base_dir = tempfile::tempdir()?;
-    // let base = base_dir.path();
+    // let base = r"E:\tmp\raft\rocks";
+    let base_dir = tempfile::tempdir()?;
+    let base = base_dir.path();
     // 确保临时目录存在
     fs::create_dir_all(base)?;
 
