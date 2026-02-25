@@ -1,7 +1,9 @@
+use crate::network::node::TypeConfig;
 use crate::server::core::config::{create_temp_dir, get_cache_file_name};
 use byteorder::LittleEndian;
 use moka::Expiry;
 use moka::sync::Cache;
+use openraft::SnapshotMeta;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 use std::mem::size_of;
@@ -27,6 +29,8 @@ const ARC_COUNTER_SIZE: usize = 2 * size_of::<usize>(); // strong + weak
 const VEC_SIZE: usize = size_of::<Vec<u8>>();
 
 const CACHE_MAGIC_NUM: &[u8; 4] = b"MYC1";
+
+const VERSION: u8 = 1;
 
 impl MyValue {
     pub fn estimated_memory_usage(&self) -> usize {
@@ -105,8 +109,6 @@ impl MyCache {
     where
         W: AsyncWrite + Unpin + Send,
     {
-        writer.write_all(CACHE_MAGIC_NUM).await?;
-        writer.write_u8(1).await?;
         for entry in self.cache.iter() {
             let (k_arc, v) = entry;
             let key_bytes = bincode2::serialize(&*k_arc)?;
@@ -123,18 +125,6 @@ impl MyCache {
     where
         R: AsyncRead + Unpin,
     {
-        let mut magic = [0u8; 4];
-        reader.read_exact(&mut magic).await?;
-        if &magic != CACHE_MAGIC_NUM {
-            return Err(io::Error::new(io::ErrorKind::Other, "invalid file magic"));
-        }
-
-        let mut version = [0u8; 1];
-        reader.read_exact(&mut version).await?;
-        if version[0] != 1 {
-            return Err(io::Error::new(io::ErrorKind::Other, "unsupported version"));
-        }
-
         loop {
             let key_len = match reader.read_u64().await {
                 Ok(v) => v as usize,
@@ -169,6 +159,7 @@ impl MyCache {
 }
 pub async fn dump_cache_to_path<P>(
     cache: MyCache,
+    meta: SnapshotMeta<TypeConfig>,
     path: P,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
@@ -178,6 +169,14 @@ where
     let tmp = path.with_extension("tmp");
     let f = File::create(&tmp).await?;
     let mut writer = BufWriter::new(f);
+
+    writer.write_all(CACHE_MAGIC_NUM).await?;
+    writer.write_u8(VERSION).await?;
+
+    let result = bincode2::serialize(&meta)?;
+    writer.write_u64(result.len() as u64).await?;
+    writer.write_all(&result).await?;
+
     cache.dump_cache_to_writer(&mut writer).await?;
     writer.flush().await?;
     writer.get_ref().sync_all().await?;
@@ -185,7 +184,10 @@ where
     Ok(())
 }
 
-pub async fn load_cache_from_path<P>(cache: MyCache, path: P) -> Result<(), std::io::Error>
+pub async fn load_cache_from_path<P>(
+    cache: MyCache,
+    path: P,
+) -> Result<SnapshotMeta<TypeConfig>, std::io::Error>
 where
     P: AsRef<Path>,
 {
@@ -193,11 +195,31 @@ where
 
     let f = match File::open(path).await {
         Ok(f) => f,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        //文件不存在
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Default::default()),
         Err(e) => return Err(e),
     };
+
     let mut reader = BufReader::new(f);
-    cache.load_cache_from_reader(&mut reader).await
+    let mut magic = [0u8; 4];
+    reader.read_exact(&mut magic).await?;
+    if &magic != CACHE_MAGIC_NUM {
+        return Err(io::Error::new(io::ErrorKind::Other, "invalid file magic"));
+    }
+    let mut version = [0u8; 1];
+    reader.read_exact(&mut version).await?;
+    if version[0] != VERSION {
+        return Err(io::Error::new(io::ErrorKind::Other, "unsupported version"));
+    }
+
+    let meta_len = reader.read_u64().await? as usize;
+    let mut meta_buf = vec![0u8; meta_len];
+    reader.read_exact(&mut meta_buf).await?;
+    let meta: SnapshotMeta<TypeConfig> = bincode2::deserialize(&meta_buf)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    cache.load_cache_from_reader(&mut reader).await?;
+    Ok(meta)
 }
 
 impl Serialize for MyCache {
@@ -256,7 +278,7 @@ async fn test_dump_and_load_with_data() {
     // let temp_file = NamedTempFile::new().unwrap();
     // let path = temp_file.path();
 
-    dump_cache_to_path(cache.clone(), path.clone())
+    dump_cache_to_path(cache.clone(), Default::default(), path.clone())
         .await
         .expect("dump cache should succeed");
 
