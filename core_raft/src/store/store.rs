@@ -1,6 +1,8 @@
 use crate::network::model::{Request, Response};
 use crate::network::node::{GroupId, TypeConfig};
-use crate::server::core::moka::{MyCache, MyValue, dump_cache_to_path, load_cache_from_path};
+use crate::server::core::moka::{
+    MyCache, MyValue, dump_cache_to_path, load_cache_from_path, load_meta_from_path,
+};
 use crate::server::handler::model::SetRes;
 use futures::Stream;
 use futures::TryStreamExt;
@@ -71,7 +73,7 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachineStore {
 
         let cache = self.data.kvs.clone();
 
-        dump_cache_to_path(cache, meta.clone(), &self.path).await?;
+        dump_cache_to_path(cache, meta.clone(), &self.path,self.group_id).await?;
         Ok(Snapshot {
             meta,
             snapshot: Cursor::new(Vec::new()),
@@ -142,6 +144,7 @@ impl StateMachineStore {
 impl RaftStateMachine<TypeConfig> for StateMachineStore {
     type SnapshotBuilder = Self;
 
+    //让 Raft 核心在启动或恢复时，知道状态机已经应用到哪个日志位置，以及当前有效的 membership 是什么。
     async fn applied_state(
         &mut self,
     ) -> Result<(Option<LogId<TypeConfig>>, StoredMembership<TypeConfig>), io::Error> {
@@ -210,38 +213,19 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
         meta: &SnapshotMeta<TypeConfig>,
         snapshot: <TypeConfig as RaftTypeConfig>::SnapshotData,
     ) -> Result<(), io::Error> {
-        load_cache_from_path(self.data.kvs.clone(), self.path.clone()).await?;
+        //TODO 直接在内存中构建，不需要从磁盘中读取
+        load_cache_from_path(self.data.kvs.clone(), &self.path).await?;
         Ok(())
     }
 
     async fn get_current_snapshot(&mut self) -> Result<Option<Snapshot<TypeConfig>>, io::Error> {
-        Ok(None)
+        let path = load_meta_from_path(&self.path).await?;
+        match path {
+            None => Ok(None),
+            Some(data) => Ok(Some(Snapshot {
+                meta: data,
+                snapshot: Cursor::new(Vec::new()),
+            })),
+        }
     }
 }
-
-// pub(crate) async fn new_storage<P: AsRef<Path>>(db_path: P) -> Arc<DB> {
-//     let mut db_opts = Options::default();
-//     db_opts.create_missing_column_families(true);
-//     db_opts.create_if_missing(true);
-//     //设置常见的优化
-//
-//     db_opts
-//         .set_max_background_jobs((std::thread::available_parallelism().unwrap().get() / 1) as i32); //def 2
-//     db_opts.set_enable_pipelined_write(true); // 启用流水线写入，并发大时写入性能更高
-//     //l0
-//     db_opts.set_level_zero_file_num_compaction_trigger(8); //默认是4
-//     db_opts.set_level_zero_slowdown_writes_trigger(40); //默认20
-//     db_opts.set_level_zero_stop_writes_trigger(48); //def 24
-//     db_opts.set_target_file_size_base(128 * 1024 * 1024); //默认为64M
-//     //
-//     let store = ColumnFamilyDescriptor::new("store", db_opts.clone());
-//     let meta = ColumnFamilyDescriptor::new("meta", db_opts.clone());
-//     let logs = ColumnFamilyDescriptor::new("logs", db_opts.clone());
-//
-//     //打开多个数据库并创建列族
-//     let db: DBWithThreadMode<SingleThreaded> =
-//         DB::open_cf_descriptors(&db_opts, db_path, vec![store, meta, logs]).unwrap();
-//
-//     let db = Arc::new(db);
-//     db
-// }

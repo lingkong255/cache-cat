@@ -1,3 +1,3 @@
 pub mod raft_engine;
-pub mod rocks_log_store;
-pub mod rocks_store;
+pub mod log_store;
+pub mod store;

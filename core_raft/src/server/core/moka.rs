@@ -163,6 +163,7 @@ pub async fn dump_cache_to_path<P>(
     cache: MyCache,
     meta: SnapshotMeta<TypeConfig>,
     path: P,
+    group_id: GroupId,
 ) -> Result<(), std::io::Error>
 where
     P: AsRef<Path>,
@@ -173,7 +174,6 @@ where
     fs::create_dir_all(&snapshot_dir).await?;
 
     // 创建临时文件名
-    let group_id = 0; // 这里应该传入实际的 group_id，可能需要修改函数参数
     let temp_filename = format!("snapshot_from_mem_{}_{}.tmp", Uuid::new_v4(), group_id);
     let final_filename = get_snapshot_file_name(group_id as GroupId);
 
@@ -240,6 +240,40 @@ where
     Ok(Some(meta))
 }
 
+pub async fn load_meta_from_path<P>(path: P) -> Result<Option<SnapshotMeta<TypeConfig>>, io::Error>
+where
+    P: AsRef<Path>,
+{
+    let path = path.as_ref();
+
+    let f = match File::open(path).await {
+        Ok(f) => f,
+        //文件不存在
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+
+    let mut reader = BufReader::new(f);
+    let mut magic = [0u8; 4];
+    reader.read_exact(&mut magic).await?;
+    if &magic != CACHE_MAGIC_NUM {
+        return Err(io::Error::new(io::ErrorKind::Other, "invalid file magic"));
+    }
+    let mut version = [0u8; 1];
+    reader.read_exact(&mut version).await?;
+    if version[0] != VERSION {
+        return Err(io::Error::new(io::ErrorKind::Other, "unsupported version"));
+    }
+
+    let meta_len = reader.read_u64().await? as usize;
+    let mut meta_buf = vec![0u8; meta_len];
+    reader.read_exact(&mut meta_buf).await?;
+    let meta: SnapshotMeta<TypeConfig> = bincode2::deserialize(&meta_buf)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    Ok(Some(meta))
+}
+
 impl Serialize for MyCache {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -296,7 +330,7 @@ async fn test_dump_and_load_with_data() {
     // let temp_file = NamedTempFile::new().unwrap();
     // let path = temp_file.path();
 
-    dump_cache_to_path(cache.clone(), Default::default(), path.clone())
+    dump_cache_to_path(cache.clone(), Default::default(), path.clone(), 1)
         .await
         .expect("dump cache should succeed");
 

@@ -2,7 +2,7 @@ use crate::network::model::{Request, Response};
 use crate::network::router::{MultiNetworkFactory, Router};
 use crate::server::core::config::GROUP_NUM;
 use crate::store::raft_engine::create_raft_engine;
-use crate::store::rocks_log_store::RocksLogStore;
+use crate::store::log_store::RocksLogStore;
 use openraft::Config;
 use openraft::SnapshotPolicy::LogsSinceLast;
 use std::collections::HashMap;
@@ -23,8 +23,8 @@ pub type GroupId = u16;
 pub type NodeId = u16;
 
 //实现是纯内存的暂时
-pub type LogStore = crate::store::rocks_log_store::RocksLogStore;
-pub type StateMachineStore = crate::store::rocks_store::StateMachineStore;
+pub type LogStore = crate::store::log_store::RocksLogStore;
+pub type StateMachineStore = crate::store::store::StateMachineStore;
 pub type Raft = openraft::Raft<TypeConfig>;
 
 pub struct CacheCatApp {

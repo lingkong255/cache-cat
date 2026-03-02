@@ -121,6 +121,7 @@ async fn append_entries(app: App, req: AppendEntriesReq) -> AppendEntriesRespons
 }
 
 //InstallFullSnapshotReq 把openraft自带的俩个参数包裹在一起了
+// 从节点收到数据 在这里序列化到磁盘 后续install_full_snapshot会从磁盘中反序列化
 async fn install_full_snapshot(
     app: App,
     req: InstallFullSnapshotReq,

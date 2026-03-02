@@ -5,7 +5,7 @@ use crate::server::core::config::{ONE, THREE, TWO};
 use crate::server::handler::model::SetReq;
 use crate::server::handler::rpc;
 use crate::store::raft_engine::create_raft_engine;
-use crate::store::rocks_log_store::RocksLogStore;
+use crate::store::log_store::RocksLogStore;
 use openraft::{BasicNode, Config};
 use std::collections::BTreeMap;
 use std::path::Path;

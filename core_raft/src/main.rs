@@ -1,6 +1,6 @@
 use core_raft::network;
 use core_raft::network::node::TypeConfig;
-use core_raft::network::raft_rocksdb::start_multi_raft_app;
+use core_raft::network::raft::start_multi_raft_app;
 use core_raft::server::core::config::{ONE, THREE, TWO};
 use mimalloc::MiMalloc;
 use openraft::AsyncRuntime;
@@ -151,7 +151,7 @@ async fn raft() -> Result<(), Box<dyn std::error::Error>> {
     let num_cpus = std::thread::available_parallelism()?.get();
     let _h1 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 2);
-        let x = rt.block_on(network::raft_rocksdb::start_raft_app(
+        let x = rt.block_on(network::raft::start_raft_app(
             1,
             d1.path(),
             String::from(ONE),
@@ -159,7 +159,7 @@ async fn raft() -> Result<(), Box<dyn std::error::Error>> {
     });
     let _h2 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 2);
-        let x = rt.block_on(network::raft_rocksdb::start_raft_app(
+        let x = rt.block_on(network::raft::start_raft_app(
             2,
             d2.path(),
             String::from(TWO),
@@ -168,7 +168,7 @@ async fn raft() -> Result<(), Box<dyn std::error::Error>> {
 
     let _h3 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(num_cpus / 2);
-        let x = rt.block_on(network::raft_rocksdb::start_raft_app(
+        let x = rt.block_on(network::raft::start_raft_app(
             3,
             d3.path(),
             String::from(THREE),
