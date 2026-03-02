@@ -97,6 +97,9 @@ impl MyCache {
     pub fn insert(&self, key: Arc<Vec<u8>>, value: MyValue) {
         self.cache.insert(key, value);
     }
+    pub fn invalidate_all(&self) {
+        self.cache.invalidate_all();
+    }
 
     /// 获取值
     pub fn get(&self, key: &Arc<Vec<u8>>) -> Option<MyValue> {
@@ -209,8 +212,9 @@ pub async fn load_cache_from_path<P>(
 where
     P: AsRef<Path>,
 {
+    //先将缓存清空
+    cache.invalidate_all();
     let path = path.as_ref();
-
     let f = match File::open(path).await {
         Ok(f) => f,
         //文件不存在

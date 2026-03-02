@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use crate::store::store::StateMachineStore;
 
+
+
 openraft::declare_raft_types!(
     /// Declare the type configuration for example K/V store.
     pub TypeConfig:

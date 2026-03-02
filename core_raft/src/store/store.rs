@@ -73,7 +73,7 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachineStore {
 
         let cache = self.data.kvs.clone();
 
-        dump_cache_to_path(cache, meta.clone(), &self.path,self.group_id).await?;
+        dump_cache_to_path(cache, meta.clone(), &self.path, self.group_id).await?;
         Ok(Snapshot {
             meta,
             snapshot: Cursor::new(Vec::new()),
@@ -208,17 +208,18 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
         Ok(Cursor::new(Vec::new()))
     }
 
+    // Raft协议强制快照文件先持久化到磁盘，然后再应用到状态机。不能实现类似Redis的直接应用到状态机。
     async fn install_snapshot(
         &mut self,
         meta: &SnapshotMeta<TypeConfig>,
         snapshot: <TypeConfig as RaftTypeConfig>::SnapshotData,
     ) -> Result<(), io::Error> {
-        //TODO 直接在内存中构建，不需要从磁盘中读取
         load_cache_from_path(self.data.kvs.clone(), &self.path).await?;
         Ok(())
     }
 
     async fn get_current_snapshot(&mut self) -> Result<Option<Snapshot<TypeConfig>>, io::Error> {
+        //理论上这里的load是多余的，因为发送的时候还会从磁盘上读取一次
         let path = load_meta_from_path(&self.path).await?;
         match path {
             None => Ok(None),

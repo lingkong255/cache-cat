@@ -1,83 +1,79 @@
 use crate::network::model::{Request, Response};
-use crate::network::network::NetworkFactory;
 use crate::network::node::{App, CacheCatApp, NodeId, create_node};
 use crate::server::core::config::{ONE, THREE, TWO};
 use crate::server::handler::model::SetReq;
 use crate::server::handler::rpc;
-use crate::store::log_store::LogStore;
-use crate::store::raft_engine::create_raft_engine;
-use crate::store::store::StateMachineStore;
 use openraft::{BasicNode, Config};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-pub async fn start_raft_app<P>(node_id: NodeId, dir: P, addr: String) -> std::io::Result<()>
-where
-    P: AsRef<Path>,
-{
-    let config = Arc::new(Config {
-        heartbeat_interval: 2500,
-        election_timeout_min: 2990,
-        election_timeout_max: 5990, // 添加最大选举超时时间
-        ..Default::default()
-    });
-    let path = dir.as_ref().join("raft-engine");
-
-    let raft_engine = dir.as_ref().join("raft-engine");
-    // let rocksdb_path = dir.as_ref().join("rocksdb");
-    let engine = create_raft_engine(raft_engine.clone());
-    // let db: Arc<DB> = new_storage(rocksdb_path).await;
-    let log_store = LogStore::new(0, engine.clone());
-    let sm_store = StateMachineStore::new(path, 0).await?;
-    let network = NetworkFactory {};
-
-    let raft = openraft::Raft::new(
-        node_id,
-        config.clone(),
-        network,
-        log_store,
-        sm_store.clone(),
-    )
-    .await
-    .unwrap();
-
-    let app = CacheCatApp {
-        id: node_id,
-        addr: addr.clone(),
-        raft,
-        group_id: 0,
-        state_machine: sm_store,
-        path: dir.as_ref().join(""),
-    };
-
-    // 正确构建集群成员映射
-    let mut nodes = BTreeMap::new();
-    if node_id == 3 {
-        nodes.insert(
-            1,
-            BasicNode {
-                addr: ONE.to_string(),
-            },
-        );
-        nodes.insert(
-            2,
-            BasicNode {
-                addr: TWO.to_string(),
-            },
-        );
-        nodes.insert(
-            3,
-            BasicNode {
-                addr: THREE.to_string(),
-            },
-        );
-        app.raft.initialize(nodes).await.unwrap();
-    }
-    // 根据node_id决定完整的集群配置
-
-    rpc::start_server(App::new(vec![Arc::new(app)]), addr).await
-}
+// pub async fn start_raft_app<P>(node_id: NodeId, dir: P, addr: String) -> std::io::Result<()>
+// where
+//     P: AsRef<Path>,
+// {
+//     let config = Arc::new(Config {
+//         heartbeat_interval: 250,
+//         election_timeout_min: 299,
+//         election_timeout_max: 599, // 添加最大选举超时时间
+//         ..Default::default()
+//     });
+//     let path = dir.as_ref().join("raft-engine");
+//
+//     let raft_engine = dir.as_ref().join("raft-engine");
+//     // let rocksdb_path = dir.as_ref().join("rocksdb");
+//     let engine = create_raft_engine(raft_engine.clone());
+//     // let db: Arc<DB> = new_storage(rocksdb_path).await;
+//     let log_store = LogStore::new(0, engine.clone());
+//     let sm_store = StateMachineStore::new(path, 0).await?;
+//     let network = NetworkFactory {};
+//
+//     let raft = openraft::Raft::new(
+//         node_id,
+//         config.clone(),
+//         network,
+//         log_store,
+//         sm_store.clone(),
+//     )
+//     .await
+//     .unwrap();
+//
+//     let app = CacheCatApp {
+//         id: node_id,
+//         addr: addr.clone(),
+//         raft,
+//         group_id: 0,
+//         state_machine: sm_store,
+//         path: dir.as_ref().join(""),
+//     };
+//
+//     // 正确构建集群成员映射
+//     let mut nodes = BTreeMap::new();
+//     if node_id == 3 {
+//         nodes.insert(
+//             1,
+//             BasicNode {
+//                 addr: ONE.to_string(),
+//             },
+//         );
+//         nodes.insert(
+//             2,
+//             BasicNode {
+//                 addr: TWO.to_string(),
+//             },
+//         );
+//         nodes.insert(
+//             3,
+//             BasicNode {
+//                 addr: THREE.to_string(),
+//             },
+//         );
+//         app.raft.initialize(nodes).await.unwrap();
+//     }
+//     // 根据node_id决定完整的集群配置
+//
+//     rpc::start_server(App::new(vec![Arc::new(app)]), addr).await
+// }
 pub async fn start_multi_raft_app<P>(node_id: NodeId, dir: P, addr: String) -> std::io::Result<()>
 where
     P: AsRef<Path>,
@@ -117,6 +113,8 @@ where
 
     rpc::start_server(App::new(apps), addr).await
 }
+
+//这个方法用于测试主节点直接迭代状态机
 async fn benchmark_requests(apps: Vec<Arc<CacheCatApp>>) {
     println!("Starting benchmark...");
     let start_time = std::time::Instant::now();
