@@ -8,7 +8,7 @@ use tokio::time;
 
 #[tokio::test]
 async fn test_add() {
-    let client = RpcMultiClient::connect("127.0.0.1:3003")
+    let client = RpcMultiClient::connect("127.0.0.1:3003", 1)
         .await
         .expect("connect failed");
 
@@ -51,7 +51,7 @@ async fn test_add() {
     for i in 0..ITERATIONS {
         let start = Instant::now();
 
-        let _: PrintTestRes = client
+        let res: PrintTestRes = match client
             .call(
                 1,
                 PrintTestReq {
@@ -59,7 +59,14 @@ async fn test_add() {
                 },
             )
             .await
-            .expect("read call failed");
+        {
+            Ok(v) => v,
+            Err(e) => {
+                println!("Error: {:?}", e);
+                panic!("call failed");
+            }
+        };
+
 
         let elapsed = start.elapsed();
         total_read += elapsed;

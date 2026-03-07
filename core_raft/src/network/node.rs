@@ -28,7 +28,7 @@ pub type NodeId = u16;
 pub type Raft = openraft::Raft<TypeConfig>;
 
 pub struct CacheCatApp {
-    pub id: NodeId,
+    pub node_id: NodeId,
     pub addr: String,
     pub raft: Raft,
     pub group_id: GroupId,
@@ -64,7 +64,7 @@ impl Node {
         path: PathBuf,
     ) {
         let app = CacheCatApp {
-            id: self.node_id,
+            node_id: self.node_id,
             addr: addr.to_string(),
             raft,
             group_id,
@@ -88,7 +88,7 @@ where
         election_timeout_min: 299,
         election_timeout_max: 599, // 添加最大选举超时时间
         purge_batch_size: 1,
-        max_in_snapshot_log_to_keep: 1,
+        max_in_snapshot_log_to_keep: 500, //生成快照后要保留的日志数量（以供从节点同步数据）需要大于等于replication_lag_threshold,该参数会影响快照逻辑
         max_append_entries: Some(50),
         max_payload_entries: 50,
         snapshot_policy: LogsSinceLast(100),

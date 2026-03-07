@@ -182,7 +182,6 @@ where
     // 创建临时文件名
     let temp_filename = format!("snapshot_from_mem_{}_{}.tmp", Uuid::new_v4(), group_id);
     let final_filename = get_snapshot_file_name(group_id as GroupId);
-    println!("文件名：{}", final_filename);
 
     let temp_path = snapshot_dir.join(&temp_filename);
     let final_path = snapshot_dir.join(&final_filename);

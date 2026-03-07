@@ -129,7 +129,7 @@ fn multi_raft() -> Result<(), Box<dyn std::error::Error>> {
         let x = rt.block_on(start_multi_raft_app(3, d3, String::from(THREE)));
     });
 
-    sleep(Duration::from_secs(11));
+    // sleep(Duration::from_secs(11));
     let _h2 = thread::spawn(move || {
         let rt = Builder::new_multi_thread()
             .max_blocking_threads(512)

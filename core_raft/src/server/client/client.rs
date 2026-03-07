@@ -1,9 +1,12 @@
+use crate::network::node::{NodeId, TypeConfig};
 use crate::server::core::config::TCP_CONNECT_NUM;
+use crate::server::handler::external_handler::MyError;
 use bincode2;
 use bytes::{BufMut, Bytes, BytesMut};
 use crossbeam_utils::CachePadded;
 use futures::task::AtomicWaker;
 use futures::{SinkExt, StreamExt};
+use openraft::error::{NetworkError, RPCError, RemoteError};
 use parking_lot::Mutex;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -65,18 +68,23 @@ impl SlotTable {
 pub struct RpcMultiClient {
     clients: Vec<RpcClient>,
     next_client: AtomicU32,
+    node_id: NodeId,
 }
 impl Clone for RpcMultiClient {
     fn clone(&self) -> Self {
         Self {
             clients: self.clients.clone(),
             next_client: AtomicU32::new(0),
+            node_id: self.node_id,
         }
     }
 }
 
 impl RpcMultiClient {
-    pub async fn connect(addr: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub async fn connect(
+        addr: &str,
+        node_id: NodeId,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let mut clients = Vec::new();
         for _ in 0..TCP_CONNECT_NUM {
             let client = RpcClient::connect(addr).await?;
@@ -85,11 +93,13 @@ impl RpcMultiClient {
         Ok(Self {
             clients,
             next_client: AtomicU32::new(0),
+            node_id,
         })
     }
     pub async fn connect_with_num(
         addr: &str,
         connect_num: usize,
+        node_id: NodeId,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let mut clients = Vec::new();
         for _ in 0..connect_num {
@@ -99,20 +109,17 @@ impl RpcMultiClient {
         Ok(Self {
             clients,
             next_client: AtomicU32::new(0),
+            node_id,
         })
     }
 
-    pub async fn call<Req, Res>(
-        &self,
-        func_id: u32,
-        req: Req,
-    ) -> Result<Res, Box<dyn Error + Send + Sync>>
+    pub async fn call<Req, Res>(&self, func_id: u32, req: Req) -> Result<Res, RPCError<TypeConfig>>
     where
         Req: Serialize,
         Res: DeserializeOwned,
     {
         let idx = self.next_client.fetch_add(1, Ordering::Relaxed) as usize % self.clients.len();
-        self.clients[idx].call(func_id, req).await
+        self.clients[idx].call(func_id, req, self.node_id).await
     }
 }
 
@@ -184,14 +191,16 @@ impl RpcClient {
         })
     }
 
-    pub async fn call<Req, Res>(
+    pub async fn call<Req, Res, E>(
         &self,
         func_id: u32,
         req: Req,
-    ) -> Result<Res, Box<dyn Error + Send + Sync>>
+        node_id: NodeId,
+    ) -> Result<Res, RPCError<TypeConfig, E>>
     where
         Req: Serialize,
         Res: DeserializeOwned,
+        E: Error + DeserializeOwned,
     {
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let idx = (request_id & INDEX_MASK) as usize;
@@ -200,7 +209,9 @@ impl RpcClient {
         // 抢占槽位
         if slot.occupied.swap(true, Ordering::Acquire) {
             // 如果已经被占用，说明并发量超过了 MAX_PENDING 或发生了死锁
-            return Err("RPC Slot Table overflow".into());
+            return Err(RPCError::Network(NetworkError::<TypeConfig>::from_string(
+                "too many requests",
+            )));
         }
 
         // 初始化槽位状态
@@ -214,11 +225,12 @@ impl RpcClient {
         let mut buf = BytesMut::with_capacity(128);
         buf.put_u32(request_id);
         buf.put_u32(func_id);
-        bincode2::serialize_into((&mut buf).writer(), &req)?;
+        bincode2::serialize_into((&mut buf).writer(), &req)
+            .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
 
         if let Err(e) = self.tx_writer.send(buf).await {
             slot.occupied.store(false, Ordering::Release);
-            return Err(format!("Connection closed: {}", e).into());
+            return Err(RPCError::Network(NetworkError::new(&e)));
         }
 
         // 等待响应 (ResponseFuture)
@@ -226,10 +238,12 @@ impl RpcClient {
             slot,
             expected_id: request_id,
         };
-
-        let response_bytes = waiter.await?;
-        let res: Res = bincode2::deserialize(&response_bytes)?;
-        Ok(res)
+        let response_bytes = waiter
+            .await
+            .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+        let remote_result: Result<Res, E> = bincode2::deserialize(&response_bytes)
+            .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+        remote_result.map_err(|e| RPCError::RemoteError(RemoteError::new(node_id, e)))
     }
 }
 
@@ -240,7 +254,7 @@ struct ResponseFuture<'a> {
 }
 
 impl<'a> Future for ResponseFuture<'a> {
-    type Output = Result<Bytes, Box<dyn Error + Send + Sync>>;
+    type Output = Result<Bytes, RPCError<TypeConfig>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // 注册当前任务以备唤醒

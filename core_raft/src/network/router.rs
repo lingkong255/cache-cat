@@ -24,7 +24,7 @@ impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
         let router = self.factory.clone();
         let addr = node.addr.clone();
         let nodes = router.nodes.clone();
-        match RpcMultiClient::connect(&addr).await {
+        match RpcMultiClient::connect(&addr, target).await {
             Ok(client) => {
                 nodes.insert(target, client);
             }
@@ -33,7 +33,7 @@ impl RaftNetworkFactory<TypeConfig> for MultiNetworkFactory {
                 tokio::spawn(async move {
                     loop {
                         sleep(Duration::from_secs(1)).await;
-                        match RpcMultiClient::connect(&addr).await {
+                        match RpcMultiClient::connect(&addr, target).await {
                             Ok(client) => {
                                 tracing::info!("reconnect to {} success", addr);
                                 nodes.insert(target, client);

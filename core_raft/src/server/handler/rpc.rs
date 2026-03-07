@@ -242,7 +242,7 @@ pub async fn hand(app: App, tx: UnboundedSender<Bytes>, mut package: Bytes) -> R
         .map(|(_, ctor)| ctor())
         .ok_or(())?;
 
-    let response_data = handler.call(app, package).await;
+    let response_data = handler.internal_call(app, package).await;
 
     // 构造要发送给客户端的 payload：request_id(4) + response_data
     let mut payload = BytesMut::with_capacity(4 + response_data.len());

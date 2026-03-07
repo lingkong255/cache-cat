@@ -86,7 +86,8 @@ impl Drop for FileOperator {
         let hardlink_path = self.get_hard_link_buf();
 
         if let Err(e) = std::fs::remove_file(&hardlink_path) {
-            tracing::warn!(
+            tracing::info!(
+                //没有成功删除硬链接（正常现象）
                 "HardlinkSender: failed to remove hardlink {}: {}",
                 hardlink_path.display(),
                 e

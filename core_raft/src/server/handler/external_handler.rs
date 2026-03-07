@@ -4,14 +4,15 @@ use crate::server::handler::model::*;
 use async_trait::async_trait;
 use bytes::Bytes;
 use openraft::Snapshot;
+use openraft::error::{ClientWriteError, Fatal, RPCError, RaftError, RemoteError};
 use openraft::raft::{
     AppendEntriesResponse, ClientWriteResponse, InstallSnapshotRequest, InstallSnapshotResponse,
     SnapshotResponse, VoteRequest, VoteResponse,
 };
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::io::Cursor;
 use std::time::Instant;
 
 pub type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
@@ -41,7 +42,7 @@ fn hash_string(s: &str) -> u64 {
 #[async_trait]
 pub trait RpcHandler: Send + Sync {
     // 将 app 改为 Arc 传递，更符合异步环境下的生命周期要求
-    async fn call(&self, app: App, data: Bytes) -> Bytes;
+    async fn internal_call(&self, app: App, data: Bytes) -> Bytes;
 }
 
 // 修改函数指针定义，使其支持异步返回 Future
@@ -62,7 +63,7 @@ where
     Res: Send + 'static + Serialize,
     Fut: Future<Output = Res> + Send + 'static,
 {
-    async fn call(&self, app: App, data: Bytes) -> Bytes {
+    async fn internal_call(&self, app: App, data: Bytes) -> Bytes {
         // 反序列化
         let req: Req = bincode2::deserialize(data.as_ref()).expect("Failed to deserialize");
         // 执行异步业务函数
@@ -75,22 +76,28 @@ where
 
 // --- 业务函数全部改为 async ---
 
-async fn print_test(_app: App, d: PrintTestReq) -> PrintTestRes {
-    PrintTestRes { message: d.message }
+#[derive(Debug, Serialize, Deserialize, thiserror::Error)]
+pub enum MyError {
+    #[error("{0}")]
+    Io(String),
+}
+
+async fn print_test(_app: App, d: PrintTestReq) -> Result<PrintTestRes, MyError> {
+    // Ok(PrintTestRes { message: d.message })
+    Err(MyError::Io("test".to_string()))
 }
 
 // 主节点才能成功调用这个方法，其他节点会失败
-async fn write(app: App, req: Request) -> ClientWriteResponse<TypeConfig> {
-    // 根据请求判断属于哪个组ftokio::spawnz
+async fn write(
+    app: App,
+    req: Request,
+) -> Result<ClientWriteResponse<TypeConfig>, RaftError<TypeConfig, ClientWriteError<TypeConfig>>> {
+    // 根据请求判断属于哪个组
     let group = get_group(&app, req.hash_code());
-    let res: ClientWriteResponse<TypeConfig> = group
-        .raft
-        .client_write(req)
-        .await
-        .expect("Raft write failed");
+    let res = group.raft.client_write(req).await;
     res
 }
-async fn read(app: App, req: String) -> Option<String> {
+async fn read(app: App, req: String) -> Result<Option<String>, RaftError<TypeConfig>> {
     // let group = get_group(&app, hash_string(&req));
     // let kvs = group.state_machine.data.kvs.lock().await;
     // let value = kvs.get(&req);
@@ -99,21 +106,23 @@ async fn read(app: App, req: String) -> Option<String> {
 }
 
 //TODO 向上传播错误
-async fn vote(app: App, req: VoteReq) -> VoteResponse<TypeConfig> {
+async fn vote(app: App, req: VoteReq) -> Result<VoteResponse<TypeConfig>, RaftError<TypeConfig>> {
     // openraft 的 vote 是异步的
     let group = get_app(&app, req.group_id);
-    group.raft.vote(req.vote).await.expect("Raft vote failed")
+    group.raft.vote(req.vote).await
 }
 
 //理论上只有从节点会被调用这个方法
-async fn append_entries(app: App, req: AppendEntriesReq) -> AppendEntriesResponse<TypeConfig> {
+async fn append_entries(
+    app: App,
+    req: AppendEntriesReq,
+) -> Result<AppendEntriesResponse<TypeConfig>, RaftError<TypeConfig>> {
     let start = Instant::now();
     let e = req.append_entries.entries.is_empty();
     let res = get_app(&app, req.group_id)
         .raft
         .append_entries(req.append_entries)
-        .await
-        .expect("Raft append_entries failed");
+        .await;
     let elapsed = start.elapsed();
     if !e {
         tracing::info!("append 从节点内部处理: {:?} ", elapsed);
@@ -126,7 +135,7 @@ async fn append_entries(app: App, req: AppendEntriesReq) -> AppendEntriesRespons
 async fn install_full_snapshot(
     app: App,
     req: InstallFullSnapshotReq,
-) -> SnapshotResponse<TypeConfig> {
+) -> Result<SnapshotResponse<TypeConfig>, Fatal<TypeConfig>> {
     let snapshot = Snapshot {
         meta: req.snapshot_meta,
         snapshot: req.snapshot,
@@ -135,5 +144,4 @@ async fn install_full_snapshot(
         .raft
         .install_full_snapshot(req.vote, snapshot)
         .await
-        .expect("Raft install_snapshot failed")
 }

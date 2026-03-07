@@ -83,11 +83,11 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachineStore {
             last_membership,
             snapshot_id,
         };
-        println!(
-            "build_snapshot: {:?},count{:?}",
-            self.path,
-            self.data.kvs.count()
-        );
+        // println!(
+        //     "build_snapshot: {:?},count{:?}",
+        //     self.path,
+        //     self.data.kvs.count()
+        // );
         let cache = self.data.kvs.clone();
         dump_cache_to_path(cache, meta.clone(), &self.path, self.group_id).await?;
         //创建快照的硬链接
@@ -208,7 +208,7 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
     }
 
     async fn get_current_snapshot(&mut self) -> Result<Option<Snapshot<TypeConfig>>, io::Error> {
-        println!("当前快照路径{:?}", self.path);
+        // println!("当前快照路径{:?}", self.path);
         let option = FileOperator::new(self.group_id, &self.path).await?;
         match option {
             None => Ok(None),
