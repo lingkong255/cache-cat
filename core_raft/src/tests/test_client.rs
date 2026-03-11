@@ -2,6 +2,8 @@ use crate::network::model::Request;
 use crate::network::node::TypeConfig;
 use crate::server::client::client::RpcMultiClient;
 use crate::server::handler::model::{PrintTestReq, PrintTestRes, SetReq};
+use openraft::RPCTypes::Vote;
+use openraft::error::Timeout;
 use openraft::raft::ClientWriteResponse;
 use std::time::{Duration, Instant};
 use tokio::time;
@@ -52,10 +54,17 @@ async fn test_add() {
         let start = Instant::now();
 
         let res: PrintTestRes = match client
-            .call(
+            .call_with_timeout(
                 1,
                 PrintTestReq {
                     message: "xxx".to_string(),
+                },
+                Duration::from_secs(3),
+                Timeout {
+                    action: Vote,
+                    target: 1,
+                    timeout: Duration::from_secs(3),
+                    id: 1,
                 },
             )
             .await
@@ -66,7 +75,6 @@ async fn test_add() {
                 panic!("call failed");
             }
         };
-
 
         let elapsed = start.elapsed();
         total_read += elapsed;

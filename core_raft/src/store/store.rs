@@ -66,8 +66,8 @@ pub struct StateMachineData {
 impl RaftSnapshotBuilder<TypeConfig> for StateMachineStore {
     //这里是clone了一个self 然后调用build_snapshot
     async fn build_snapshot(&mut self) -> Result<Snapshot<TypeConfig>, io::Error> {
-        //将快照标记为开始
-        self.data.snapshot_state.store(1, Ordering::SeqCst);
+        //将快照标记为开始,为了避免重排序，读取需要用Acquire
+        self.data.snapshot_state.store(1, Ordering::Release);
         let last_applied_log = self.data.last_applied_log_id;
         let last_membership = self.data.last_membership.clone();
 
@@ -158,6 +158,9 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
                                 ttl_ms: 0,
                             };
                             st.insert(Arc::new(set_req.key), value);
+                            // 如果正在快照，写入hashmap
+
+                            //
                             Response::Set(SetRes {})
                         }
                     },

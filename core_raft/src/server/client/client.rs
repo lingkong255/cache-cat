@@ -5,6 +5,8 @@ use bytes::{BufMut, Bytes, BytesMut};
 use crossbeam_utils::CachePadded;
 use futures::task::AtomicWaker;
 use futures::{SinkExt, StreamExt};
+use openraft::alias::TimeoutErrorOf;
+use openraft::error::Timeout;
 use openraft::error::{NetworkError, RPCError, RemoteError, Unreachable};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -15,9 +17,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::task::{Context, Poll};
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio::time::timeout;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 // --- 槽位管理器配置 ---
@@ -115,6 +119,24 @@ impl RpcMultiClient {
     {
         let idx = self.next_client.fetch_add(1, Ordering::Relaxed) as usize % self.clients.len();
         self.clients[idx].call(func_id, req).await
+    }
+    /// 带超时的调用版本
+    pub async fn call_with_timeout<Req, Res>(
+        &self,
+        func_id: u32,
+        req: Req,
+        duration: Duration,
+        err: Timeout<TypeConfig>,
+    ) -> Result<Res, RPCError<TypeConfig>>
+    where
+        Req: Serialize,
+        Res: DeserializeOwned,
+    {
+        // 使用 tokio::time::timeout 包装核心逻辑
+        match timeout(duration, self.call(func_id, req)).await {
+            Ok(result) => result,
+            Err(_) => Err(RPCError::Timeout(err)),
+        }
     }
 }
 
@@ -223,13 +245,8 @@ impl RpcClient {
         }
 
         // 等待响应 (ResponseFuture)
-        let waiter = ResponseFuture {
-            slot,
-            expected_id: request_id,
-        };
-        let response_bytes = waiter
-            .await
-            .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+        let waiter = ResponseFuture { slot };
+        let response_bytes = waiter.await?;
         let remote_result: Result<Res, String> = bincode2::deserialize(&response_bytes)
             .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
         remote_result.map_err(|e| RPCError::Unreachable(Unreachable::from_string(&e)))
@@ -239,20 +256,30 @@ impl RpcClient {
 /// 自定义 Future 避免使用 oneshot 的内存分配
 struct ResponseFuture<'a> {
     slot: &'a Slot,
-    expected_id: u32,
+}
+
+impl<'a> Drop for ResponseFuture<'a> {
+    fn drop(&mut self) {
+        // 确保 Future 消失时（无论是正常完成还是超时/取消），槽位都会释放
+        self.slot.occupied.store(false, Ordering::Release);
+    }
 }
 
 impl<'a> Future for ResponseFuture<'a> {
     type Output = Result<Bytes, RPCError<TypeConfig>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // 注册当前任务以备唤醒
+        let mut guard = self.slot.data.lock();
+
+        if let Some(data) = guard.take() {
+            // 注意：这里不再手动 store(false)，交给 Drop 处理或在此处处理皆可
+            // 为了逻辑清晰，我们在 Ready 时处理，并在 Drop 中做检查
+            return Poll::Ready(Ok(data));
+        }
+
         self.slot.waker.register(cx.waker());
 
-        let mut guard = self.slot.data.lock();
         if let Some(data) = guard.take() {
-            // 释放槽位
-            self.slot.occupied.store(false, Ordering::Release);
             return Poll::Ready(Ok(data));
         }
 

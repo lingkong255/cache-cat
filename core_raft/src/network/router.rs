@@ -1,13 +1,12 @@
 use crate::network::node::{GroupId, NodeId, TypeConfig};
 use crate::server::client::client::{RpcClient, RpcMultiClient};
 use crate::server::handler::model::{AppendEntriesReq, InstallFullSnapshotReq, VoteReq};
+use openraft::error::Timeout;
 
 use dashmap::DashMap;
-use openraft::RPCTypes::InstallSnapshot;
+use openraft::RPCTypes::{InstallSnapshot, Vote};
 use openraft::alias::VoteOf;
-use openraft::error::{
-    RPCError, RemoteError, ReplicationClosed, StreamingError, Timeout, Unreachable,
-};
+use openraft::error::{RPCError, ReplicationClosed, StreamingError, Unreachable};
 use openraft::network::RPCOption;
 use openraft::raft::{
     AppendEntriesRequest, AppendEntriesResponse, SnapshotResponse, VoteRequest, VoteResponse,
@@ -16,7 +15,7 @@ use openraft::{OptionalSend, RaftNetworkFactory, Snapshot};
 use openraft_multi::{GroupNetworkAdapter, GroupNetworkFactory, GroupRouter};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::time::sleep;
 
 pub type MultiNetworkFactory = GroupNetworkFactory<Router, GroupId>;
@@ -105,7 +104,21 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
                     target as u64
                 ))))
             }
-            Some(client) => client.call(7, req).await,
+            Some(client) => {
+                client
+                    .call_with_timeout(
+                        7,
+                        req,
+                        option.hard_ttl(),
+                        Timeout {
+                            action: Vote,
+                            target,
+                            timeout: option.hard_ttl(),
+                            id: self.node_id,
+                        },
+                    )
+                    .await
+            }
         }
     }
 
@@ -132,7 +145,21 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
                     target as u64
                 ))))
             }
-            Some(client) => client.call(6, req).await,
+            Some(client) => {
+                client
+                    .call_with_timeout(
+                        6,
+                        req,
+                        option.hard_ttl(),
+                        Timeout {
+                            action: Vote,
+                            target,
+                            timeout: option.hard_ttl(),
+                            id: self.node_id,
+                        },
+                    )
+                    .await
+            }
         }
     }
 
@@ -183,7 +210,19 @@ impl GroupRouter<TypeConfig, GroupId> for Router {
             group_id,
         };
 
-        let result = client.call(8, req).await?;
+        let result = client
+            .call_with_timeout(
+                8,
+                req,
+                option.hard_ttl(),
+                Timeout {
+                    action: Vote,
+                    target,
+                    timeout: option.hard_ttl(),
+                    id: self.node_id,
+                },
+            )
+            .await?;
         Ok(result)
     }
 }

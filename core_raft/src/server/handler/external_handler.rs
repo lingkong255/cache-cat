@@ -12,6 +12,7 @@ use openraft::raft::{
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::thread::sleep;
 use std::time::Instant;
 
 pub type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
@@ -75,6 +76,7 @@ where
 
 // --- 业务函数全部改为 async ---
 async fn print_test(_app: App, d: PrintTestReq) -> Result<PrintTestRes, String> {
+    sleep(std::time::Duration::from_secs(10));
     Ok(PrintTestRes { message: d.message })
 }
 
