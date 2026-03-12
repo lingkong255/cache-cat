@@ -76,7 +76,7 @@ where
 
 // --- 业务函数全部改为 async ---
 async fn print_test(_app: App, d: PrintTestReq) -> Result<PrintTestRes, String> {
-    sleep(std::time::Duration::from_secs(10));
+    // sleep(std::time::Duration::from_secs(10));
     Ok(PrintTestRes { message: d.message })
 }
 

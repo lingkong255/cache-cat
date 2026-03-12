@@ -18,7 +18,7 @@ tokio = { version = "1.49.0", features = ["full", "tracing", "rt", "rt-multi-thr
 tokio-util = { version = "0.7.18", features = ["codec"] }
 bincode2 = "2.0.1"
 bytes = "1.11.0"
-moka = { version = "0.12.12", features = ["sync"] }
+moka = { version = "0.12.12", features = ["sync","future"] }
 async-trait = "0.1.89"
 byteorder = "1.5.0"
 tempfile = "3.24.0"

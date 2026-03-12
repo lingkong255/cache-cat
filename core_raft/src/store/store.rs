@@ -33,13 +33,7 @@ impl Drop for FileStore {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StoredSnapshot {
-    pub meta: SnapshotMeta<TypeConfig>,
 
-    /// The data of the state machine at the time of this snapshot.
-    pub data: Vec<u8>,
-}
 
 #[derive(Debug, Clone)]
 pub struct StateMachineStore {
@@ -52,6 +46,8 @@ pub struct StateMachineStore {
 
 #[derive(Debug, Clone)]
 pub struct StateMachineData {
+
+
     pub last_applied_log_id: Option<LogId<TypeConfig>>,
 
     pub last_membership: StoredMembership<TypeConfig>,
@@ -156,8 +152,9 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
                             let value = MyValue {
                                 data: Arc::new(set_req.value),
                                 ttl_ms: 0,
+                                is_snapshot: false,
                             };
-                            st.insert(Arc::new(set_req.key), value);
+                            st.insert(Arc::new(set_req.key), value).await;
                             // 如果正在快照，写入hashmap
 
                             //

@@ -8,7 +8,7 @@
 
 ## Hash
 
-通过 Rust自带的hashmap进行实现
+通过 Rust自带的hashmap进行实现。如要读写并发，只能使用flurry。
 
 ## List
 

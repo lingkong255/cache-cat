@@ -2,7 +2,7 @@ use crate::network::node::{GroupId, TypeConfig};
 use crate::server::core::config::{create_temp_dir, get_snapshot_file_name};
 use byteorder::LittleEndian;
 use moka::Expiry;
-use moka::sync::Cache;
+use moka::future::Cache;
 use openraft::SnapshotMeta;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MyValue {
+    pub is_snapshot: bool,
     pub data: Arc<Vec<u8>>,
     pub ttl_ms: u64,
 }
@@ -94,16 +95,16 @@ impl MyCache {
     }
 
     /// 插入值
-    pub fn insert(&self, key: Arc<Vec<u8>>, value: MyValue) {
-        self.cache.insert(key, value);
+    pub async fn insert(&self, key: Arc<Vec<u8>>, value: MyValue) {
+        self.cache.insert(key, value).await
     }
     pub fn invalidate_all(&self) {
         self.cache.invalidate_all();
     }
 
     /// 获取值
-    pub fn get(&self, key: &Arc<Vec<u8>>) -> Option<MyValue> {
-        self.cache.get(key)
+    pub async fn get(&self, key: &Arc<Vec<u8>>) -> Option<MyValue> {
+        self.cache.get(key).await
     }
     pub fn count(&self) -> u64 {
         self.cache.entry_count()
@@ -159,7 +160,7 @@ impl MyCache {
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
             let value: MyValue = bincode2::deserialize(&val_buf)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            self.insert(Arc::new(key_vec), value);
+            self.insert(Arc::new(key_vec), value).await;
         }
 
         Ok(())
@@ -296,22 +297,7 @@ impl Serialize for MyCache {
     }
 }
 
-impl<'de> Deserialize<'de> for MyCache {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let entries: Vec<(Vec<u8>, MyValue)> = Vec::deserialize(deserializer)?;
 
-        let cache = MyCache::new();
-
-        for (k, v) in entries {
-            cache.insert(Arc::new(k), v);
-        }
-
-        Ok(cache)
-    }
-}
 #[tokio::test]
 async fn test_dump_and_load_with_data() {
     let cache = MyCache::new();
@@ -319,18 +305,20 @@ async fn test_dump_and_load_with_data() {
     // 插入测试数据
     let key1 = Arc::new(b"key1".to_vec());
     let value1 = MyValue {
+        is_snapshot: false,
         data: Arc::new(b"value1".to_vec()),
         ttl_ms: 1000,
     };
 
     let key2 = Arc::new(b"key2".to_vec());
     let value2 = MyValue {
+        is_snapshot: true,
         data: Arc::new(b"value2".to_vec()),
         ttl_ms: 0, // 永不过期
     };
 
-    cache.insert(key1.clone(), value1.clone());
-    cache.insert(key2.clone(), value2.clone());
+    cache.insert(key1.clone(), value1.clone()).await;
+    cache.insert(key2.clone(), value2.clone()).await;
 
     let path = create_temp_dir().unwrap().join("snapshot.bin");
     // 转储到临时文件
@@ -348,8 +336,8 @@ async fn test_dump_and_load_with_data() {
         .expect("load cache should succeed");
 
     // 验证数据完整性
-    let loaded_value1 = new_cache.get(&key1);
-    let loaded_value2 = new_cache.get(&key2);
+    let loaded_value1 = new_cache.get(&key1).await;
+    let loaded_value2 = new_cache.get(&key2).await;
 
     assert!(loaded_value1.is_some(), "key1 should exist");
     assert!(loaded_value2.is_some(), "key2 should exist");

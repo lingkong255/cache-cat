@@ -19,28 +19,28 @@ async fn test_add() {
     // // ========================
     // // 1️⃣ 测写延迟
     // // ========================
-    // let mut total_write = Duration::ZERO;
-    //
-    // for i in 0..ITERATIONS {
-    //     time::sleep(Duration::from_millis(1)).await;
-    //     let start = Instant::now();
-    //     let _: ClientWriteResponse<TypeConfig> = client
-    //         .call(
-    //             2,
-    //             Request::Set(SetReq {
-    //                 key: format!("test_{}", i).into_bytes(),
-    //                 value: format!("test_value_{}", i).into_bytes(),
-    //                 ex_time: 0,
-    //             }),
-    //         )
-    //         .await
-    //         .expect("write call failed");
-    //
-    //     total_write += start.elapsed();
-    // }
-    //
-    // let avg_write = total_write / ITERATIONS;
-    // println!("写入平均耗时: {} 微秒", avg_write.as_micros());
+    let mut total_write = Duration::ZERO;
+
+    for i in 0..ITERATIONS {
+        time::sleep(Duration::from_millis(1)).await;
+        let start = Instant::now();
+        let _: ClientWriteResponse<TypeConfig> = client
+            .call(
+                2,
+                Request::Set(SetReq {
+                    key: format!("test_{}", i).into_bytes(),
+                    value: format!("test_value_{}", i).into_bytes(),
+                    ex_time: 0,
+                }),
+            )
+            .await
+            .expect("write call failed");
+
+        total_write += start.elapsed();
+    }
+
+    let avg_write = total_write / ITERATIONS;
+    println!("写入平均耗时: {} 微秒", avg_write.as_micros());
 
     // 等待系统稳定
     time::sleep(Duration::from_secs(1)).await;
