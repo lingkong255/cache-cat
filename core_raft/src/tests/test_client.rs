@@ -10,7 +10,7 @@ use tokio::time;
 
 #[tokio::test]
 async fn test_add() {
-    let client = RpcMultiClient::connect("127.0.0.1:3003", 1)
+    let client = RpcMultiClient::connect("127.0.0.1:3003")
         .await
         .expect("connect failed");
 

@@ -84,7 +84,6 @@ impl Clone for RpcMultiClient {
 impl RpcMultiClient {
     pub async fn connect(
         addr: &str,
-        node_id: NodeId,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let mut clients = Vec::new();
         for _ in 0..TCP_CONNECT_NUM {
@@ -99,7 +98,6 @@ impl RpcMultiClient {
     pub async fn connect_with_num(
         addr: &str,
         connect_num: usize,
-        node_id: NodeId,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let mut clients = Vec::new();
         for _ in 0..connect_num {
